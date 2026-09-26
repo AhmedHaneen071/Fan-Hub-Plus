@@ -8,11 +8,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, X } from "lucide-react";
+import { Check, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { reviewSubmission } from "@/lib/admin-actions";
+import {
+  DeleteConfirmDialog,
+  useDeleteFlow,
+} from "@/components/admin/manager-parts";
+import { deleteSubmission, reviewSubmission } from "@/lib/admin-actions";
 
 export type SubmissionRow = {
   id: string;
@@ -35,6 +39,7 @@ export function SubmissionsManager({ rows }: { rows: SubmissionRow[] }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const del = useDeleteFlow(deleteSubmission);
 
   function decide(id: string, status: "APPROVED" | "REJECTED") {
     setPending(id);
@@ -58,56 +63,90 @@ export function SubmissionsManager({ rows }: { rows: SubmissionRow[] }) {
     );
   }
 
-  return (
-    <ul className="space-y-3">
-      {rows.map((row) => (
-        <li key={row.id} className="rounded-xl border bg-card p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className={STATUS_BADGE[row.status]}>
-                  {row.status.toLowerCase()}
-                </Badge>
-                {row.category ? (
-                  <Badge variant="secondary" className="text-xs">
-                    {row.category}
-                  </Badge>
-                ) : null}
-                <span className="text-xs text-muted-foreground">
-                  {row.author} ·{" "}
-                  {new Date(row.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-              <h3 className="font-medium">{row.title}</h3>
-              <p className="line-clamp-3 text-sm text-muted-foreground">{row.body}</p>
-            </div>
+  const deleting = del.target ? rows.find((row) => row.id === del.target) : undefined;
 
-            {row.status === "PENDING" ? (
+  return (
+    <>
+      <ul className="space-y-3">
+        {rows.map((row) => (
+          <li key={row.id} className="rounded-xl border bg-card p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className={STATUS_BADGE[row.status]}>
+                    {row.status.toLowerCase()}
+                  </Badge>
+                  {row.category ? (
+                    <Badge variant="secondary" className="text-xs">
+                      {row.category}
+                    </Badge>
+                  ) : null}
+                  <span className="text-xs text-muted-foreground">
+                    {row.author} ·{" "}
+                    {new Date(row.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <h3 className="font-medium">{row.title}</h3>
+                <p className="line-clamp-3 text-sm text-muted-foreground">{row.body}</p>
+              </div>
+
               <div className="flex shrink-0 items-center gap-1">
+                {row.status === "PENDING" ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => decide(row.id, "APPROVED")}
+                      disabled={isPending && pending === row.id}
+                    >
+                      <Check aria-hidden="true" />
+                      Approve
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => decide(row.id, "REJECTED")}
+                      disabled={isPending && pending === row.id}
+                    >
+                      <X aria-hidden="true" />
+                      Reject
+                    </Button>
+                  </>
+                ) : null}
                 <Button
                   type="button"
                   size="sm"
-                  onClick={() => decide(row.id, "APPROVED")}
-                  disabled={isPending && pending === row.id}
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => del.ask(row.id)}
+                  aria-label={`Delete submission ${row.title}`}
                 >
-                  <Check aria-hidden="true" />
-                  Approve
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => decide(row.id, "REJECTED")}
-                  disabled={isPending && pending === row.id}
-                >
-                  <X aria-hidden="true" />
-                  Reject
+                  <Trash2 aria-hidden="true" />
                 </Button>
               </div>
-            ) : null}
-          </div>
-        </li>
-      ))}
-    </ul>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {/* A rejected submission is a moderation decision, not a record of the
+          fan's contribution. Deleting it is the only way to clear the queue
+          permanently, so it needs its own confirmation. */}
+      <DeleteConfirmDialog
+        open={del.target !== null}
+        onOpenChange={(next) => {
+          if (!next) del.close();
+        }}
+        title={deleting ? `Delete "${deleting.title}"?` : "Delete this submission?"}
+        description={
+          deleting
+            ? `The submission from ${deleting.author} (${deleting.authorEmail}) is removed for good.`
+            : "This submission is removed for good."
+        }
+        pending={del.pending}
+        onConfirm={del.confirm}
+      />
+    </>
   );
 }
