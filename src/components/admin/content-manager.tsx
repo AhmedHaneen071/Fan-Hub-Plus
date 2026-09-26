@@ -148,6 +148,8 @@ export function ContentManager({
         total={total}
         addLabel="Add title"
         onAdd={openCreate}
+      
+        paged
       />
 
       <ul className="space-y-3">

@@ -65,7 +65,9 @@ export function RegisterForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        {/* method="post" so a no-JS submit cannot fall back to GET and put the
+            new password in the query string. See login-form.tsx. */}
+        <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="space-y-5">
           {formError && (
             <Alert variant="destructive" role="alert">
               <AlertDescription>{formError}</AlertDescription>

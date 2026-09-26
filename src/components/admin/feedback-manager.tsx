@@ -89,6 +89,8 @@ export function FeedbackManager({
         description="Messages members send from their dashboard. Mark them as you work through the queue."
         count={rows.length}
         total={total}
+      
+        paged
       />
 
       <p className="text-xs text-muted-foreground">

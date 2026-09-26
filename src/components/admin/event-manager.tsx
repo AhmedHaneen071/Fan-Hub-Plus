@@ -145,6 +145,8 @@ export function EventManager({
         total={total}
         addLabel="Add event"
         onAdd={openCreate}
+      
+        paged
       />
 
       <ul className="space-y-3">

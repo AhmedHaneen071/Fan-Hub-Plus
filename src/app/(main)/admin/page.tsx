@@ -12,6 +12,7 @@ import { redirect } from "next/navigation";
 import { Bookmark, MessageSquare, Package, ShieldCheck, Sparkles, Star, Users } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { SUSPENDED_PATH, isSuspended } from "@/lib/guards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,14 @@ import { UserManager, type UserAdminRow } from "@/components/admin/user-manager"
 
 import type { CategoryOption } from "@/components/admin/manager-parts";
 import { parseEventTimeline } from "@/lib/safe-html";
+import {
+  readListParams,
+  resolveWindow,
+  type ListParams,
+  type PageWindow,
+} from "@/lib/list-params";
+import { ListControls } from "@/components/admin/list-controls";
+
 import {
   FEEDBACK_STATUSES,
   type FeedbackStatus,
@@ -66,10 +75,12 @@ type Tab = (typeof TABS)[number]["value"];
 
 const TAB_VALUES = TABS.map((item) => item.value) as readonly string[];
 
-// A catalogue tab renders every row, so it needs a ceiling. Beyond this an
-// admin cannot reach the older entries — see the follow-up note in the manager
-// header. Search and pagination are the honest fix, and they are not here yet.
-const LIST_LIMIT = 200;
+// A catalogue tab used to fetch the first LIST_LIMIT rows and stop, so an admin
+// could never reach an older entry. Every unbounded list now pages through the
+// whole set and filters it; see lib/list-params.ts. The reference sets (the
+// eight fandoms, the chatbot rules) still load in full because the schema
+// bounds them.
+
 
 type AdminPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -89,6 +100,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const tab: Tab = TAB_VALUES.includes(requested ?? "")
     ? (requested as Tab)
     : "overview";
+
+  // One set of paging parameters is read for the whole page and handed to
+  // whichever loader the active tab needs, so `?q=` and `?page=` behave the same
+  // on every list.
+  const list = readListParams({ q: raw.q, page: raw.page });
 
   // Only the active tab is loaded. This page used to run one big Promise.all
   // for every panel regardless of which tab was open, so opening "Bot rules"
@@ -111,13 +127,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     tab === "overview" ? loadOverview() : null,
     tab === "submissions" ? loadSubmissions() : null,
     tab === "faqs" ? loadFaqs() : null,
-    tab === "content" ? loadContentList() : null,
-    tab === "merch" ? loadMerchList() : null,
-    tab === "events" ? loadEventList() : null,
-    tab === "characters" ? loadCharacterList() : null,
-    tab === "articles" ? loadArticleList() : null,
-    tab === "feedback" ? loadFeedbackList() : null,
-    tab === "users" ? loadUserList() : null,
+    tab === "content" ? loadContentList(list) : null,
+    tab === "merch" ? loadMerchList(list) : null,
+    tab === "events" ? loadEventList(list) : null,
+    tab === "characters" ? loadCharacterList(list) : null,
+    tab === "articles" ? loadArticleList(list) : null,
+    tab === "feedback" ? loadFeedbackList(list) : null,
+    tab === "users" ? loadUserList(list) : null,
+
     tab === "fandoms" ? loadCategoryList() : null,
     tab === "usage" ? loadUsage() : null,
     needsCategories(tab) ? loadCategories() : null,
@@ -182,54 +199,113 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       {faqs ? <FaqManager rows={faqs} /> : null}
 
       {contentList && categories ? (
-        <ContentManager rows={contentList.rows} total={contentList.total} categories={categories} />
+        <>
+          <ListControls
+            tab="content"
+            query={list.q}
+            range={resolveWindow(list, contentList.total)}
+            searchLabel="titles and descriptions"
+          />
+          <ContentManager
+            rows={contentList.rows}
+            total={contentList.total}
+            categories={categories}
+          />
+        </>
       ) : null}
 
       {merchList && categories ? (
-        <MerchManager rows={merchList.rows} total={merchList.total} categories={categories} />
+        <>
+          <ListControls
+            tab="merch"
+            query={list.q}
+            range={resolveWindow(list, merchList.total)}
+            searchLabel="item names and tags"
+          />
+          <MerchManager rows={merchList.rows} total={merchList.total} categories={categories} />
+        </>
       ) : null}
 
       {eventList && categories ? (
-        <EventManager rows={eventList.rows} total={eventList.total} categories={categories} />
+        <>
+          <ListControls
+            tab="events"
+            query={list.q}
+            range={resolveWindow(list, eventList.total)}
+            searchLabel="event names and cities"
+          />
+          <EventManager rows={eventList.rows} total={eventList.total} categories={categories} />
+        </>
       ) : null}
 
       {characterList && categories ? (
-        <CharacterManager
-          rows={characterList.rows}
-          total={characterList.total}
-          categories={categories}
-        />
+        <>
+          <ListControls
+            tab="characters"
+            query={list.q}
+            range={resolveWindow(list, characterList.total)}
+            searchLabel="character names"
+          />
+          <CharacterManager
+            rows={characterList.rows}
+            total={characterList.total}
+            categories={categories}
+          />
+        </>
       ) : null}
 
       {feedbackList ? (
-        <FeedbackManager
-          rows={feedbackList.rows}
-          total={feedbackList.total}
-          openCount={feedbackList.openCount}
-        />
+        <>
+          <ListControls
+            tab="feedback"
+            query={list.q}
+            range={resolveWindow(list, feedbackList.total)}
+            searchLabel="message text"
+          />
+          <FeedbackManager
+            rows={feedbackList.rows}
+            total={feedbackList.total}
+            openCount={feedbackList.openCount}
+          />
+        </>
       ) : null}
 
       {userList ? (
-        <UserManager
-          rows={userList.rows}
-          total={userList.total}
-          selfId={session.user.id}
-          adminCount={userList.adminCount}
-        />
+        <>
+          <ListControls
+            tab="users"
+            query={list.q}
+            range={resolveWindow(list, userList.total)}
+            searchLabel="names and emails"
+          />
+          <UserManager
+            rows={userList.rows}
+            selfId={session.user.id}
+            adminCount={userList.adminCount}
+          />
+        </>
       ) : null}
 
       {categoryList ? (
-
         <CategoryManager rows={categoryList.rows} total={categoryList.total} />
       ) : null}
 
       {articleList && categories ? (
-        <ArticleManager
-          rows={articleList.rows}
-          total={articleList.total}
-          categories={categories}
-        />
+        <>
+          <ListControls
+            tab="articles"
+            query={list.q}
+            range={resolveWindow(list, articleList.total)}
+            searchLabel="article titles"
+          />
+          <ArticleManager
+            rows={articleList.rows}
+            total={articleList.total}
+            categories={categories}
+          />
+        </>
       ) : null}
+
 
       {usage ? (
         <div className="grid gap-5 lg:grid-cols-2">
@@ -385,20 +461,55 @@ async function loadCategories(): Promise<CategoryOption[]> {
   return categories;
 }
 
-async function loadContentList(): Promise<{ rows: ContentRow[]; total: number }> {
-  const [rows, total] = await Promise.all([
+/**
+ * A requested page can point past the end of the set: a hand-edited URL, or rows
+ * deleted while the admin was sitting on the last page. resolveWindow() clamps
+ * the label, so without this the list would read "Page 6 of 6" above an empty
+ * body. The re-query only happens on that rare path, which keeps the common case
+ * at a single round trip.
+ */
+async function settlePage<T>(
+  requested: ListParams,
+  window: PageWindow,
+  first: T[],
+  refetch: () => Promise<T[]>
+): Promise<T[]> {
+  return first.length === 0 && requested.page > window.page ? refetch() : first;
+}
+
+async function loadContentList(list: ListParams): Promise<{ rows: ContentRow[]; total: number }> {
+  // Content.type is a Prisma enum, so it cannot be matched with `contains` and
+  // is not searched here; a text search across a fixed enum would need an exact
+  // match anyway, which the type picker already does.
+  const where: Prisma.ContentWhereInput = list.term
+    ? {
+        OR: [
+          { title: { contains: list.term } },
+          { description: { contains: list.term } },
+        ],
+      }
+    : {};
+
+  const fetchRows = (skip: number) =>
     prisma.content.findMany({
+      where,
       orderBy: [{ popularity_score: "desc" }, { title: "asc" }],
-      take: LIST_LIMIT,
+      skip,
+      take: list.take,
       include: {
         category: { select: { name: true } },
         _count: { select: { bookmarks: true, ratings: true } },
       },
-    }),
-    prisma.content.count(),
-  ]);
+    });
+
+  const [first, total] = await Promise.all([fetchRows(list.skip), prisma.content.count({ where })]);
+  const window = resolveWindow(list, total);
+  const rows = await settlePage(list, window, first, () =>
+    fetchRows((window.page - 1) * list.pageSize)
+  );
 
   return {
+
     total,
     rows: rows.map((row) => ({
       id: row.id,
@@ -418,15 +529,32 @@ async function loadContentList(): Promise<{ rows: ContentRow[]; total: number }>
   };
 }
 
-async function loadMerchList(): Promise<{ rows: MerchRow[]; total: number }> {
-  const [rows, total] = await Promise.all([
+async function loadMerchList(list: ListParams): Promise<{ rows: MerchRow[]; total: number }> {
+  // MerchandiseItem.tag is a Prisma enum (LIMITED_EDITION, PRE_ORDER,
+  // COLLECTIBLE), so like Content.type it is not a `contains` target. The name
+  // is the field worth searching.
+  const where: Prisma.MerchandiseItemWhereInput = list.term
+    ? { name: { contains: list.term } }
+    : {};
+
+  const fetchRows = (skip: number) =>
     prisma.merchandiseItem.findMany({
+      where,
       orderBy: [{ is_upcoming: "desc" }, { created_at: "desc" }],
-      take: LIST_LIMIT,
+      skip,
+      take: list.take,
       include: { category: { select: { name: true } }, _count: { select: { bookmarks: true } } },
-    }),
-    prisma.merchandiseItem.count(),
+    });
+
+  const [first, total] = await Promise.all([
+    fetchRows(list.skip),
+    prisma.merchandiseItem.count({ where }),
   ]);
+  const window = resolveWindow(list, total);
+  const rows = await settlePage(list, window, first, () =>
+    fetchRows((window.page - 1) * list.pageSize)
+  );
+
 
   return {
     total,
@@ -446,15 +574,26 @@ async function loadMerchList(): Promise<{ rows: MerchRow[]; total: number }> {
   };
 }
 
-async function loadEventList(): Promise<{ rows: EventRow[]; total: number }> {
-  const [rows, total] = await Promise.all([
+async function loadEventList(list: ListParams): Promise<{ rows: EventRow[]; total: number }> {
+  const where: Prisma.EventWhereInput = list.term
+    ? { OR: [{ name: { contains: list.term } }, { city: { contains: list.term } }] }
+    : {};
+
+  const fetchRows = (skip: number) =>
     prisma.event.findMany({
+      where,
       orderBy: { date: "asc" },
-      take: LIST_LIMIT,
+      skip,
+      take: list.take,
       include: { category: { select: { name: true } } },
-    }),
-    prisma.event.count(),
-  ]);
+    });
+
+  const [first, total] = await Promise.all([fetchRows(list.skip), prisma.event.count({ where })]);
+  const window = resolveWindow(list, total);
+  const rows = await settlePage(list, window, first, () =>
+    fetchRows((window.page - 1) * list.pageSize)
+  );
+
 
   return {
     total,
@@ -472,15 +611,29 @@ async function loadEventList(): Promise<{ rows: EventRow[]; total: number }> {
   };
 }
 
-async function loadCharacterList(): Promise<{ rows: CharacterRow[]; total: number }> {
-  const [rows, total] = await Promise.all([
+async function loadCharacterList(list: ListParams): Promise<{ rows: CharacterRow[]; total: number }> {
+  const where: Prisma.CharacterProfileWhereInput = list.term
+    ? { name: { contains: list.term } }
+    : {};
+
+  const fetchRows = (skip: number) =>
     prisma.characterProfile.findMany({
+      where,
       orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
-      take: LIST_LIMIT,
+      skip,
+      take: list.take,
       include: { category: { select: { name: true } }, _count: { select: { bookmarks: true } } },
-    }),
-    prisma.characterProfile.count(),
+    });
+
+  const [first, total] = await Promise.all([
+    fetchRows(list.skip),
+    prisma.characterProfile.count({ where }),
   ]);
+  const window = resolveWindow(list, total);
+  const rows = await settlePage(list, window, first, () =>
+    fetchRows((window.page - 1) * list.pageSize)
+  );
+
 
   return {
     total,
@@ -496,15 +649,29 @@ async function loadCharacterList(): Promise<{ rows: CharacterRow[]; total: numbe
   };
 }
 
-async function loadArticleList(): Promise<{ rows: ArticleRow[]; total: number }> {
-  const [rows, total] = await Promise.all([
+async function loadArticleList(list: ListParams): Promise<{ rows: ArticleRow[]; total: number }> {
+  const where: Prisma.FeaturedArticleWhereInput = list.term
+    ? { title: { contains: list.term } }
+    : {};
+
+  const fetchRows = (skip: number) =>
     prisma.featuredArticle.findMany({
+      where,
       orderBy: [{ category: { name: "asc" } }, { title: "asc" }],
-      take: LIST_LIMIT,
+      skip,
+      take: list.take,
       include: { category: { select: { name: true } } },
-    }),
-    prisma.featuredArticle.count(),
+    });
+
+  const [first, total] = await Promise.all([
+    fetchRows(list.skip),
+    prisma.featuredArticle.count({ where }),
   ]);
+  const window = resolveWindow(list, total);
+  const rows = await settlePage(list, window, first, () =>
+    fetchRows((window.page - 1) * list.pageSize)
+  );
+
 
   return {
     total,
@@ -521,23 +688,40 @@ async function loadArticleList(): Promise<{ rows: ArticleRow[]; total: number }>
   };
 }
 
-async function loadFeedbackList(): Promise<{
+async function loadFeedbackList(list: ListParams): Promise<{
   rows: FeedbackAdminRow[];
   total: number;
   openCount: number;
 }> {
-  // The database returns them oldest-first; the JS sort below then partitions
-  // that into unresolved-then-resolved. Because Array.sort is stable, the
-  // within-group order stays chronological.
-  const [rows, total, openCount] = await Promise.all([
+  const where: Prisma.FeedbackWhereInput = list.term
+    ? { message: { contains: list.term } }
+    : {};
+
+  // The queue is fetched oldest-first so the paging is stable, then the rows of
+  // the page that came back are partitioned unresolved-first. Because
+  // Array.sort is stable, the within-group order stays chronological. The sort
+  // is per page, not global: across page boundaries an admin can still meet a
+  // resolved row above an unresolved one, which is why the pager reports the
+  // range rather than promising a strict queue.
+  const fetchRows = (skip: number) =>
     prisma.feedback.findMany({
+      where,
       orderBy: [{ created_at: "asc" }],
-      take: LIST_LIMIT,
+      skip,
+      take: list.take,
       include: { user: { select: { id: true, name: true, email: true, role: true } } },
-    }),
-    prisma.feedback.count(),
+    });
+
+  const [first, total, openCount] = await Promise.all([
+    fetchRows(list.skip),
+    prisma.feedback.count({ where }),
     prisma.feedback.count({ where: { status: { not: "RESOLVED" } } }),
   ]);
+  const window = resolveWindow(list, total);
+  const rows = await settlePage(list, window, first, () =>
+    fetchRows((window.page - 1) * list.pageSize)
+  );
+
 
   return {
     total,
@@ -564,19 +748,30 @@ async function loadFeedbackList(): Promise<{
   };
 }
 
-async function loadUserList(): Promise<{
+async function loadUserList(list: ListParams): Promise<{
   rows: UserAdminRow[];
   total: number;
   adminCount: number;
 }> {
   const now = new Date();
-  const [rows, total, adminCount] = await Promise.all([
+  const where: Prisma.UserWhereInput = list.term
+    ? { OR: [{ name: { contains: list.term } }, { email: { contains: list.term } }] }
+    : {};
+
+  const fetchRows = (skip: number) =>
     prisma.user.findMany({
-      // Suspended accounts first, then newest joiners. The live-suspension test
-      // is done in JS because SQLite cannot compare a column to a parameter in
-      // a WHERE clause that Prisma can express.
+      where,
+      // Newest joiners first, straight from the database. A live suspension
+      // could be filtered with `suspended_until: { gt: now }`, but that would
+      // drop the *expired* suspensions from the list while `total` still counted
+      // them, leaving the pager describing rows nobody can see. They are shown as
+      // unsuspended instead, which keeps the count and the rows in agreement.
+      // A suspended row carries a badge rather than floating to the top, because
+      // sorting it to the top is only true within one page and the pager does not
+      // keep that order across pages. Search still finds it by name or address.
       orderBy: [{ created_at: "desc" }],
-      take: LIST_LIMIT,
+      skip,
+      take: list.take,
       select: {
         id: true,
         name: true,
@@ -587,10 +782,20 @@ async function loadUserList(): Promise<{
         suspension_reason: true,
         _count: { select: { bookmarks: true, submissions: true, feedback: true } },
       },
-    }),
-    prisma.user.count(),
+    });
+
+  const [first, total, adminCount] = await Promise.all([
+    fetchRows(list.skip),
+    prisma.user.count({ where }),
+    // The admin count is deliberately NOT filtered by the search: the
+    // last-admin guard depends on the real total, and "3 admins, 1 matching your
+    // search" would be a confusing thing to show next to the role picker.
     prisma.user.count({ where: { role: "ADMIN" } }),
   ]);
+  const window = resolveWindow(list, total);
+  const rows = await settlePage(list, window, first, () =>
+    fetchRows((window.page - 1) * list.pageSize)
+  );
 
   const mapped = rows.map((row) => ({
     id: row.id,
@@ -612,15 +817,7 @@ async function loadUserList(): Promise<{
     },
   }));
 
-  return {
-    total,
-    adminCount,
-    rows: mapped.sort((a, b) => {
-      const rank = (row: UserAdminRow) => (row.suspendedUntil ? 0 : 1);
-      const difference = rank(a) - rank(b);
-      return difference !== 0 ? difference : b.createdAt.localeCompare(a.createdAt);
-    }),
-  };
+  return { total, adminCount, rows: mapped };
 }
 
 async function loadCategoryList(): Promise<{ rows: CategoryRow[]; total: number }> {  const [rows, total] = await Promise.all([

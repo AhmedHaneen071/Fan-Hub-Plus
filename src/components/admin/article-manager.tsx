@@ -131,6 +131,8 @@ export function ArticleManager({
         total={total}
         addLabel="Add article"
         onAdd={openCreate}
+      
+        paged
       />
 
       <ul className="space-y-3">

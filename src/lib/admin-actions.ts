@@ -33,10 +33,20 @@ export type AdminResult =
   | { ok: true; message: string }
   | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
+/**
+ * The single gate every admin mutation passes through. It checks the suspension
+ * as well as the role: hiding the buttons on /admin is a courtesy, and a
+ * suspended admin who kept the tab open (or who calls the action endpoint
+ * directly) must still be refused. `suspendedUntil` is re-read from the database
+ * on every session build, so lifting a suspension takes effect without a re-login.
+ */
 async function requireAdmin(): Promise<string | null> {
   const session = await auth();
   if (!session?.user?.id) return "Please sign in.";
   if (session.user.role !== "ADMIN") return "Admins only.";
+  if (session.user.suspendedUntil) {
+    return "This account is suspended, so admin changes are off. Lift the suspension to continue.";
+  }
   return null;
 }
 

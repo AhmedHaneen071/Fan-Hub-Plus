@@ -80,12 +80,10 @@ function formatDate(iso: string): string {
 
 export function UserManager({
   rows,
-  total,
   selfId,
   adminCount,
 }: {
   rows: UserAdminRow[];
-  total: number;
   selfId: string;
   adminCount: number;
 }) {
@@ -137,10 +135,9 @@ export function UserManager({
             Change a member&apos;s role or suspend an account. Neither action
             deletes anything, and both can be undone from here.
           </p>
+          {/* The row range is the pager's job; this line only adds what the
+              pager cannot know. */}
           <p className="text-xs text-muted-foreground">
-            {rows.length === total
-              ? `${total} shown`
-              : `Showing the first ${rows.length} of ${total}.`}{" "}
             {adminCount} admin{adminCount === 1 ? "" : "s"} on record.
           </p>
         </div>

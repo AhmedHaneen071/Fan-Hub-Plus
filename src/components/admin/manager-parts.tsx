@@ -49,6 +49,7 @@ export function ManagerHeader({
   total,
   addLabel,
   onAdd,
+  paged = false,
 }: {
   description: string;
   count: number;
@@ -57,14 +58,20 @@ export function ManagerHeader({
   // edits the fixed set of CategoryName rows.
   addLabel?: string;
   onAdd?: () => void;
+  // Set when a ListControls pager above the list already reports the range. The
+  // header's own "showing the first N of M" line would then be both redundant
+  // and, since it cannot see the page, misleading.
+  paged?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="space-y-1">
         <p className="text-sm text-muted-foreground">{description}</p>
-        <p className="text-xs text-muted-foreground">
-          {count === total ? `${count} shown` : `Showing the first ${count} of ${total}.`}
-        </p>
+        {!paged && (
+          <p className="text-xs text-muted-foreground">
+            {count === total ? `${count} shown` : `Showing the first ${count} of ${total}.`}
+          </p>
+        )}
       </div>
       {addLabel && onAdd ? (
         <Button type="button" onClick={onAdd}>

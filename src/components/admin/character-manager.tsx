@@ -117,6 +117,8 @@ export function CharacterManager({
         total={total}
         addLabel="Add character"
         onAdd={openCreate}
+      
+        paged
       />
 
       <ul className="space-y-3">

@@ -68,7 +68,12 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        {/* method="post" is not decoration. Without it the browser's default is
+            GET to the current URL, so if this bundle fails to load the password
+            is submitted into the query string — and from there into browser
+            history, the Referer header and the access log. POST to a route with
+            no POST handler fails safely with 405 instead. */}
+        <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="space-y-5">
           {formError && (
             <Alert variant="destructive" role="alert">
               <AlertDescription>{formError}</AlertDescription>

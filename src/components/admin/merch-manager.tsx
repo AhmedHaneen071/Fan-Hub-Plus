@@ -137,6 +137,8 @@ export function MerchManager({
         total={total}
         addLabel="Add item"
         onAdd={openCreate}
+      
+        paged
       />
 
       <ul className="space-y-3">

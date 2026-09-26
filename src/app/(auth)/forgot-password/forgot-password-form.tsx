@@ -95,7 +95,10 @@ export function ForgotPasswordForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        {/* method="post" for the same reason as the login form: the fallback to
+            GET would put the address in the URL and, for a shared link, in
+            someone else's history. */}
+        <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="space-y-5">
           {formError && (
             <Alert variant="destructive" role="alert">
               <AlertDescription>{formError}</AlertDescription>
