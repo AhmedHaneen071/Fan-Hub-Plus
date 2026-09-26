@@ -189,14 +189,17 @@ export async function deleteFaq(id: string): Promise<AdminResult> {
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const existing = await prisma.chatbotFAQ.findUnique({
-    where: { id },
-    select: { id: true },
-  });
-  if (!existing) return { ok: false, error: "That rule no longer exists." };
+  const parsedId = z.string().trim().min(1).max(60).safeParse(id);
+  if (!parsedId.success) return { ok: false, error: "That rule no longer exists." };
 
   try {
-    await prisma.chatbotFAQ.delete({ where: { id } });
+    const existing = await prisma.chatbotFAQ.findUnique({
+      where: { id: parsedId.data },
+      select: { id: true },
+    });
+    if (!existing) return { ok: false, error: "That rule no longer exists." };
+
+    await prisma.chatbotFAQ.delete({ where: { id: parsedId.data } });
   } catch {
     // The old code swallowed the error and reported success regardless.
     return { ok: false, error: "That rule could not be removed." };
@@ -815,5 +818,4 @@ export async function deleteFeedback(id: string): Promise<AdminResult> {
   revalidatePath("/dashboard");
   return { ok: true, message: "Message deleted." };
 }
-
 

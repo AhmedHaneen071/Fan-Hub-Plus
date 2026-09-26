@@ -118,13 +118,13 @@ export async function toggleBookmark(
   const { targetType: type, targetId: id } = parsed.data;
   const userId = member.userId;
 
-  if (!(await targetExists(type, id))) {
-    return { ok: false, error: "That item no longer exists." };
-  }
-
   // The Bookmark table keeps ONE nullable column per target type. Exactly one
   // is set per row, so each branch queries a different column.
   try {
+    if (!(await targetExists(type, id))) {
+      return { ok: false, error: "That item no longer exists." };
+    }
+
     if (type === "content") {
       const existing = await prisma.bookmark.findFirst({
         where: { user_id: userId, content_id: id },
@@ -237,14 +237,14 @@ export async function upsertRating(
   const member = requireMember(await auth(), VISITOR_MESSAGE);
   if (!member.ok) return member;
 
-  const exists = await prisma.content.findUnique({
-    where: { id: parsed.data.contentId },
-    select: { id: true },
-  });
-  if (!exists) return { ok: false, error: "That title no longer exists." };
-
   // One rating per (user, content) — set the value/scale, or create the row.
   try {
+    const exists = await prisma.content.findUnique({
+      where: { id: parsed.data.contentId },
+      select: { id: true },
+    });
+    if (!exists) return { ok: false, error: "That title no longer exists." };
+
     await prisma.rating.upsert({
       where: {
         user_id_content_id: {
@@ -404,4 +404,3 @@ export async function deleteOwnFeedback(feedbackId: string): Promise<ActionOutco
   revalidatePath("/admin");
   return { ok: true, message: "Message withdrawn." };
 }
-

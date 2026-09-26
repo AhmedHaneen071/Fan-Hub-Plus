@@ -16,7 +16,7 @@ type SearchParams = Promise<{ callbackUrl?: string }>;
 export default async function LoginPage({ searchParams }: { searchParams: SearchParams }) {
   // Already signed in? Straight to the dashboard.
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  if (session?.user?.id) redirect("/dashboard");
 
   const { callbackUrl } = await searchParams;
 

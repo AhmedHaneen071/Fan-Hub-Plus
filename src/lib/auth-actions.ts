@@ -171,7 +171,7 @@ export async function requestPasswordReset(formData: FormData): Promise<AuthActi
   if (!user) {
     return {
       ok: true,
-      message: "If that account exists, a reset link is on its way.",
+      message: "If that account exists, reset instructions will be available through the configured email service.",
       redirectTo: "/login",
     };
   }
@@ -197,7 +197,7 @@ export async function requestPasswordReset(formData: FormData): Promise<AuthActi
 
   return {
     ok: true,
-    message: "If that account exists, a reset link is on its way.",
+    message: "If that account exists, reset instructions will be available through the configured email service.",
     redirectTo: "/login",
     preview: mail.ok ? mail.preview : undefined,
   };

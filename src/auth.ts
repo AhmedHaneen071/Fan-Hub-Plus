@@ -87,10 +87,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // Surface role + id on the session so pages can gate on them.
     //
     // The JWT is a snapshot from sign-in time, so a role change (or a deleted
-    // account) would not be reflected until the token expired. We re-read the
-    // user from the database on every session build and treat that as the source
-    // of truth, falling back to the token values if the query fails so a
-    // transient database error cannot lock everyone out of every page.
+    // account) would not be reflected until the token expired. Re-read the user
+    // on every session build. If the user is gone or the database cannot be
+    // checked, fail closed instead of trusting a potentially stale ADMIN role.
     session: async ({ session, token }) => {
       if (session.user) {
         const tokenId = token.id as string | undefined;
@@ -120,22 +119,45 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               },
             });
 
-            if (fresh) {
-              session.user.id = fresh.id;
-              session.user.name = fresh.name;
-              session.user.email = fresh.email;
-              session.user.role = fresh.role;
-              session.user.image = fresh.avatar_url ?? null;
-              // Null out an expired suspension rather than surfacing the old
-              // timestamp, so "lifted" needs no admin action.
-              session.user.suspendedUntil =
-                fresh.suspended_until && fresh.suspended_until > new Date()
-                  ? fresh.suspended_until.toISOString()
-                  : null;
+            if (!fresh) {
+              session.user.id = "";
+              session.user.name = "";
+              session.user.email = "";
+              session.user.image = null;
+              session.user.role = "VISITOR";
+              session.user.suspendedUntil = null;
+              return session;
             }
+
+            session.user.id = fresh.id;
+            session.user.name = fresh.name;
+            session.user.email = fresh.email;
+            session.user.role = fresh.role;
+            session.user.image = fresh.avatar_url ?? null;
+            // Null out an expired suspension rather than surfacing the old
+            // timestamp, so "lifted" needs no admin action.
+            session.user.suspendedUntil =
+              fresh.suspended_until && fresh.suspended_until > new Date()
+                ? fresh.suspended_until.toISOString()
+                : null;
           } catch {
-            // Leave the token-derived values in place.
+            // A database outage must never preserve a stale privilege.
+            session.user.id = "";
+            session.user.name = "";
+            session.user.email = "";
+            session.user.image = null;
+            session.user.role = "VISITOR";
+            session.user.suspendedUntil = null;
           }
+        } else {
+          // A session without the stable database identity cannot be granted
+          // privileges from its remaining JWT claims.
+          session.user.id = "";
+          session.user.name = "";
+          session.user.email = "";
+          session.user.image = null;
+          session.user.role = "VISITOR";
+          session.user.suspendedUntil = null;
         }
       }
       return session;

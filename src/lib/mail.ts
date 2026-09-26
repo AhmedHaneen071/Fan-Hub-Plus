@@ -6,9 +6,8 @@
 //
 // Behaviour depends on the environment:
 //   - SMTP configured  -> real email is sent through Nodemailer.
-//   - SMTP missing      -> the reset link is written to the server console and
-//                          the caller is told the send FAILED. We never report a
-//                          successful send that did not happen.
+//   - SMTP missing      -> the caller is told the send FAILED. Reset links are
+//                          never written to server logs.
 //   - development       -> the message body is also returned to the caller so
 //                          the "forgot password" screen can show the link, which
 //                          keeps the flow demoable without a mail account.
@@ -90,13 +89,12 @@ export async function sendPasswordResetEmail(
   const config = readSmtpConfig();
 
   if (!config) {
-    // No transport configured. Never claim the email went out.
+    // No transport configured. Never claim the email went out or expose the
+    // reset token in logs. Tokens can grant full account access until expiry.
     console.warn(
       "[mail] SMTP is not configured (SMTP_HOST / SMTP_USER / SMTP_PASS). " +
-        "The reset link was NOT emailed; it is printed below instead."
+        "Password-reset email delivery is unavailable."
     );
-    console.warn(`[mail] To: ${to}`);
-    console.warn(`[mail] Reset link: ${resetUrl}`);
 
     return {
       ok: false,
