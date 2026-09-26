@@ -42,6 +42,18 @@ export const FEEDBACK_STATUS_LABEL: Record<FeedbackStatus, string> = {
   RESOLVED: "resolved",
 };
 
+// --------------------------------------------------------------------- users
+/**
+ * Mirrors the Prisma UserRole enum. It is redeclared here so the role picker and
+ * the action's schema share one list, and so a role added to the enum without
+ * being added here shows up as a failed build rather than a hidden option.
+ */
+export const USER_ROLES = ["VISITOR", "USER", "ADMIN"] as const;
+export type UserRoleValue = (typeof USER_ROLES)[number];
+
+/** The ban lengths offered in the suspension dialog. */
+export const SUSPENSION_PRESETS = [1, 7, 30, 365] as const;
+
 export const MERCH_TAGS = ["LIMITED_EDITION", "PRE_ORDER", "COLLECTIBLE"] as const;
 
 export const MERCH_TAG_LABELS: Record<(typeof MERCH_TAGS)[number], string> = {

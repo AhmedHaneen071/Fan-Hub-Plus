@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import type { Session } from "next-auth";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -25,6 +26,7 @@ import {
   parseNumberOrNull,
   timelineToJson,
   FEEDBACK_STATUS_LABEL,
+  USER_ROLES,
 } from "@/lib/validations/admin";
 
 export type AdminResult =
@@ -610,6 +612,145 @@ export async function deleteArticle(id: string): Promise<AdminResult> {
 
   revalidateArticles(id);
   return { ok: true, message: `"${existing.title}" removed.` };
+}
+
+// --------------------------------------------------------------------- users
+// Role changes and suspension. Both guards that matter live here rather than in
+// the UI, because either mistake locks everyone out of the console: an admin
+// cannot demote or suspend themselves, and the last remaining admin cannot be
+// removed from the role.
+const userRoleSchema = z.object({
+  userId: z.string().trim().min(1).max(60),
+  role: z.enum(USER_ROLES),
+});
+
+const suspensionSchema = z.object({
+  userId: z.string().trim().min(1).max(60),
+  /** Days to suspend for; 0 (or absent) lifts the suspension instead. */
+  days: z.number().int().min(0).max(3650).optional(),
+  reason: z.string().trim().max(300).optional(),
+});
+
+function pluralDays(days: number): string {
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+/**
+ * Refuses a change that would take an admin out of the console, and says why.
+ * Returns null when the change is safe. `targetIsAdmin` is passed in because
+ * the caller has already loaded the row.
+ */
+async function blockAdminLockout(
+  targetId: string,
+  targetIsAdmin: boolean,
+  actorId: string,
+  change: "demote" | "suspend"
+): Promise<string | null> {
+  if (targetId === actorId) {
+    return change === "demote"
+      ? "You cannot change your own role — ask another admin."
+      : "You cannot suspend your own account — ask another admin.";
+  }
+
+  if (!targetIsAdmin) return null;
+
+  const admins = await prisma.user.count({ where: { role: "ADMIN" } });
+  return admins <= 1 ? "This is the last admin account, so it has to keep its role." : null;
+}
+
+/** An admin guard that also refuses a suspended actor's own session. */
+async function requireActiveAdmin(): Promise<Session | null> {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  if (session.user.role !== "ADMIN") return null;
+  if (session.user.suspendedUntil) return null;
+  return session;
+}
+
+export async function setUserRole(input: unknown): Promise<AdminResult> {
+  const session = await requireActiveAdmin();
+  if (!session) return { ok: false, error: "Admins only." };
+
+  const parsed = userRoleSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "That role is not one the app uses." };
+
+  const { userId, role } = parsed.data;
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, role: true },
+  });
+  if (!target) return { ok: false, error: "That account no longer exists." };
+  if (target.role === role) return { ok: true, message: "No change to make." };
+
+  if (target.role === "ADMIN" && role !== "ADMIN") {
+    const blocked = await blockAdminLockout(userId, true, session.user.id, "demote");
+    if (blocked) return { ok: false, error: blocked };
+  }
+
+  try {
+    await prisma.user.update({ where: { id: userId }, data: { role } });
+  } catch {
+    return { ok: false, error: "That role could not be changed. Please try again." };
+  }
+
+  revalidatePath("/admin");
+  return {
+    ok: true,
+    message: `${target.name} is now ${role === "ADMIN" ? "an admin" : role.toLowerCase()}.`,
+  };
+}
+
+export async function setUserSuspension(input: unknown): Promise<AdminResult> {
+  const session = await requireActiveAdmin();
+  if (!session) return { ok: false, error: "Admins only." };
+
+  const parsed = suspensionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Pick a suspension length between 1 and 3650 days." };
+  }
+
+  const { userId, days = 0, reason } = parsed.data;
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, role: true },
+  });
+  if (!target) return { ok: false, error: "That account no longer exists." };
+
+  // Lifting a suspension is always allowed, including for the very last admin:
+  // a ban is not a demotion, and freeing an account must never be the thing that
+  // is blocked.
+  if (days === 0) {
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { suspended_until: null, suspension_reason: null },
+      });
+    } catch {
+      return { ok: false, error: "That suspension could not be lifted. Please try again." };
+    }
+
+    revalidatePath("/admin");
+    return { ok: true, message: `${target.name}'s suspension lifted.` };
+  }
+
+  const blocked = await blockAdminLockout(userId, target.role === "ADMIN", session.user.id, "suspend");
+  if (blocked) return { ok: false, error: blocked };
+
+  const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { suspended_until: until, suspension_reason: reason || null },
+    });
+  } catch {
+    return { ok: false, error: "That suspension could not be saved. Please try again." };
+  }
+
+  revalidatePath("/admin");
+  return {
+    ok: true,
+    message: `${target.name} is suspended for ${pluralDays(days)}.`,
+  };
 }
 
 // ------------------------------------------------------------------ feedback

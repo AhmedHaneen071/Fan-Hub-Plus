@@ -303,7 +303,15 @@ export async function loginUser(formData: FormData): Promise<AuthActionResult> {
   try {
     await signIn("credentials", { email, password, redirect: false });
   } catch {
-    return { ok: false, error: "Email or password is incorrect." };
+    // One message for a bad password, an unknown address and a suspended
+    // account, so the form cannot be used to learn which emails are registered.
+    // The suspension case gets its own explanation once someone does get in —
+    // see /account-suspended.
+    return {
+      ok: false,
+      error:
+        "Email or password is incorrect, or the account is suspended.",
+    };
   }
 
   // The account made it through, so clear its failure counter.

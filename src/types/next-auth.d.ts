@@ -7,11 +7,16 @@ declare module "next-auth" {
     user: {
       id: string;
       role: "VISITOR" | "USER" | "ADMIN";
+      // ISO timestamp while the account is suspended, null otherwise. Derived
+      // from the database on every session build, so it is current even for a
+      // session that started before the suspension.
+      suspendedUntil?: string | null;
     } & DefaultSession["user"];
   }
 
   interface User {
     role: "VISITOR" | "USER" | "ADMIN";
+    suspendedUntil?: string | null;
   }
 }
 
@@ -20,5 +25,6 @@ declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
     role?: "VISITOR" | "USER" | "ADMIN";
+    suspendedUntil?: string | null;
   }
 }

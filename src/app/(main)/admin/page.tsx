@@ -12,6 +12,7 @@ import { redirect } from "next/navigation";
 import { Bookmark, MessageSquare, Package, ShieldCheck, Sparkles, Star, Users } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { SUSPENDED_PATH, isSuspended } from "@/lib/guards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,8 @@ import {
   FeedbackManager,
   type FeedbackAdminRow,
 } from "@/components/admin/feedback-manager";
+import { UserManager, type UserAdminRow } from "@/components/admin/user-manager";
+
 import type { CategoryOption } from "@/components/admin/manager-parts";
 import { parseEventTimeline } from "@/lib/safe-html";
 import {
@@ -53,7 +56,9 @@ const TABS = [
   { value: "characters", label: "Characters" },
   { value: "articles", label: "Articles" },
   { value: "feedback", label: "Feedback" },
+  { value: "users", label: "Users" },
   { value: "fandoms", label: "Fandoms" },
+
   { value: "usage", label: "Usage" },
 ] as const;
 
@@ -73,6 +78,10 @@ type AdminPageProps = {
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  // A suspended admin is turned away here as well as in the actions: the role is
+  // still ADMIN, so without this check the console would render and only fail
+  // on the first click.
+  if (isSuspended(session)) redirect(SUSPENDED_PATH);
   if (session.user.role !== "ADMIN") redirect("/dashboard");
 
   const raw = await searchParams;
@@ -94,6 +103,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     characterList,
     articleList,
     feedbackList,
+    userList,
     categoryList,
     usage,
     categories,
@@ -107,10 +117,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     tab === "characters" ? loadCharacterList() : null,
     tab === "articles" ? loadArticleList() : null,
     tab === "feedback" ? loadFeedbackList() : null,
+    tab === "users" ? loadUserList() : null,
     tab === "fandoms" ? loadCategoryList() : null,
     tab === "usage" ? loadUsage() : null,
     needsCategories(tab) ? loadCategories() : null,
   ]);
+
 
 
   return (
@@ -197,7 +209,17 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         />
       ) : null}
 
+      {userList ? (
+        <UserManager
+          rows={userList.rows}
+          total={userList.total}
+          selfId={session.user.id}
+          adminCount={userList.adminCount}
+        />
+      ) : null}
+
       {categoryList ? (
+
         <CategoryManager rows={categoryList.rows} total={categoryList.total} />
       ) : null}
 
@@ -539,6 +561,65 @@ async function loadFeedbackList(): Promise<{
         if (difference !== 0) return difference;
         return a.createdAt.localeCompare(b.createdAt);
       }),
+  };
+}
+
+async function loadUserList(): Promise<{
+  rows: UserAdminRow[];
+  total: number;
+  adminCount: number;
+}> {
+  const now = new Date();
+  const [rows, total, adminCount] = await Promise.all([
+    prisma.user.findMany({
+      // Suspended accounts first, then newest joiners. The live-suspension test
+      // is done in JS because SQLite cannot compare a column to a parameter in
+      // a WHERE clause that Prisma can express.
+      orderBy: [{ created_at: "desc" }],
+      take: LIST_LIMIT,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        created_at: true,
+        suspended_until: true,
+        suspension_reason: true,
+        _count: { select: { bookmarks: true, submissions: true, feedback: true } },
+      },
+    }),
+    prisma.user.count(),
+    prisma.user.count({ where: { role: "ADMIN" } }),
+  ]);
+
+  const mapped = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    createdAt: row.created_at.toISOString(),
+    // An expired window reads as "not suspended", which is what the session
+    // callback does too — the ban lifts itself.
+    suspendedUntil:
+      row.suspended_until && row.suspended_until > now
+        ? row.suspended_until.toISOString()
+        : null,
+    suspensionReason: row.suspension_reason,
+    counts: {
+      bookmarks: row._count.bookmarks,
+      submissions: row._count.submissions,
+      feedback: row._count.feedback,
+    },
+  }));
+
+  return {
+    total,
+    adminCount,
+    rows: mapped.sort((a, b) => {
+      const rank = (row: UserAdminRow) => (row.suspendedUntil ? 0 : 1);
+      const difference = rank(a) - rank(b);
+      return difference !== 0 ? difference : b.createdAt.localeCompare(a.createdAt);
+    }),
   };
 }
 

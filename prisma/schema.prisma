@@ -91,6 +91,13 @@ model User {
   favoriteCategories Category[] // joined via implicit many-to-many table
   created_at    DateTime  @default(now())
 
+  // Suspension is expressed as an expiry rather than a boolean so a temporary
+  // ban lifts itself: the account is treated as suspended only while this
+  // timestamp is in the future. NULL means the account is in good standing, and
+  // an admin "lift" is just clearing the column — no scheduled job needed.
+  suspended_until   DateTime?
+  suspension_reason String?
+
   bookmarks      Bookmark[]
   ratings        Rating[]
   feedback       Feedback[]
@@ -99,6 +106,7 @@ model User {
   resetTokens    PasswordResetToken[]
 
   @@index([email]) // email already unique; index used by auth lookup
+  @@index([suspended_until]) // admin queue orders by soonest to expire
 }
 
 model PasswordResetToken {
@@ -168,6 +176,10 @@ model Content {
   @@index([type])
   @@index([genre])
   @@index([popularity_score])
+  // Created by the add_content_trailer_url migration but never declared here,
+  // which left the schema and the database disagreeing and made `migrate dev`
+  // try to drop a useful index. Declared so the two agree.
+  @@index([trailer_url])
 }
 
 model CharacterProfile {

@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { BookmarkCheck, Heart, MessagesSquare, Star } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { SUSPENDED_PATH, isSuspended } from "@/lib/guards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,8 @@ type DashboardPageProps = {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  if (isSuspended(session)) redirect(SUSPENDED_PATH);
+
 
   const raw = await searchParams;
   const requested = Array.isArray(raw.tab) ? raw.tab[0] : raw.tab;

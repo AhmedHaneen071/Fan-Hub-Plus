@@ -51,6 +51,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // login form cannot be used to probe which emails are registered.
         if (!user || !passwordMatches) return null;
 
+        // A suspended account cannot obtain a new session at all. The
+        // suspension window is compared against `now` here, so a ban that has
+        // already expired lets the member straight back in with no admin
+        // having to clear it. This deliberately returns the same null as a bad
+        // password: telling a stranger "that account is suspended" would
+        // confirm the address is registered.
+        if (user.suspended_until && user.suspended_until > new Date()) return null;
+
         return {
           id: user.id,
           name: user.name,
@@ -71,6 +79,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.suspendedUntil = user.suspendedUntil ?? null;
       }
       return token;
     },
@@ -90,12 +99,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         session.user.id = tokenId ?? session.user.id;
         session.user.role = tokenRole;
+        // What the token said at sign-in. The database read below is what
+        // actually decides: a member suspended mid-session must be turned away
+        // on the very next server check, not when their cookie happens to
+        // expire.
+        session.user.suspendedUntil =
+          (token.suspendedUntil as string | undefined) ?? null;
 
         if (tokenId) {
           try {
             const fresh = await prisma.user.findUnique({
               where: { id: tokenId },
-              select: { id: true, name: true, email: true, role: true, avatar_url: true },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                avatar_url: true,
+                suspended_until: true,
+              },
             });
 
             if (fresh) {
@@ -104,6 +126,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               session.user.email = fresh.email;
               session.user.role = fresh.role;
               session.user.image = fresh.avatar_url ?? null;
+              // Null out an expired suspension rather than surfacing the old
+              // timestamp, so "lifted" needs no admin action.
+              session.user.suspendedUntil =
+                fresh.suspended_until && fresh.suspended_until > new Date()
+                  ? fresh.suspended_until.toISOString()
+                  : null;
             }
           } catch {
             // Leave the token-derived values in place.

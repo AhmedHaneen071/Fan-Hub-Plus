@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { SUSPENDED_PATH, isSuspended } from "@/lib/guards";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumbs } from "@/components/explore/breadcrumbs";
 import { NameForm, PasswordForm } from "@/components/profile/profile-forms";
@@ -22,10 +23,17 @@ export const metadata: Metadata = {
 export default async function ProfilePage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  if (isSuspended(session)) redirect(SUSPENDED_PATH);
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { name: true, email: true, role: true },
+    select: {
+      name: true,
+      email: true,
+      role: true,
+      suspended_until: true,
+      suspension_reason: true,
+    },
   });
   if (!user) redirect("/login");
 
