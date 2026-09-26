@@ -18,6 +18,30 @@ import { CONTENT_TYPES } from "@/lib/constants";
 import { parseEventTimeline } from "@/lib/safe-html";
 import { extractYouTubeId } from "@/lib/youtube";
 
+/**
+ * The status values the Feedback.status column uses. It is a plain String rather
+ * than a Prisma enum, so these are the only thing standing between the column
+ * and a typo that silently filters the admin queue to nothing.
+ */
+export const FEEDBACK_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED"] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+export const FEEDBACK_TYPES = ["BUG", "SUGGESTION", "QUERY"] as const;
+export type FeedbackTypeValue = (typeof FEEDBACK_TYPES)[number];
+
+/** The admin triage control: a message id plus the status to put it in. */
+export const feedbackStatusSchema = z.object({
+  feedbackId: z.string().trim().min(1).max(60),
+  status: z.enum(FEEDBACK_STATUSES),
+});
+
+/** Phrased to complete "Message <label>." in a success toast. */
+export const FEEDBACK_STATUS_LABEL: Record<FeedbackStatus, string> = {
+  OPEN: "marked as open",
+  IN_PROGRESS: "moved to in progress",
+  RESOLVED: "resolved",
+};
+
 export const MERCH_TAGS = ["LIMITED_EDITION", "PRE_ORDER", "COLLECTIBLE"] as const;
 
 export const MERCH_TAG_LABELS: Record<(typeof MERCH_TAGS)[number], string> = {

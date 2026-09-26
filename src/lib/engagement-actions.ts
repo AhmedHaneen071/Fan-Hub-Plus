@@ -14,6 +14,13 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { requireMember } from "@/lib/guards";
+import { rateLimit } from "@/lib/rate-limit";
+import {
+  FEEDBACK_PER_HOUR,
+  FEEDBACK_WINDOW_MS,
+  MAX_OPEN_FEEDBACK_PER_MEMBER,
+  feedbackSchema,
+} from "@/lib/validations/engagement";
 
 const targetSchema = z.object({
   targetType: z.enum(["content", "character", "merchandise"]),
@@ -32,6 +39,13 @@ const bookmarkIdSchema = z.object({
 const ratingIdSchema = z.object({
   contentId: z.string().min(1).max(60),
 });
+
+// The chatbot FAQ tells members they can "send feedback", so this is the path
+// that has to exist. A member may edit or delete their own open message (a
+// typo fix beats a dead thread) but a RESOLVED one is part of the admin record
+// and is locked from the member side. The schema itself lives in
+// validations/engagement.ts so the form can share it.
+const feedbackIdSchema = z.string().trim().min(1).max(60);
 
 // `value` depends on the chosen scale: 1..5 for stars, +/-1 for thumbs.
 const ratingSchema = z
@@ -276,3 +290,118 @@ export async function removeRating(contentId: string): Promise<ActionOutcome> {
   revalidatePath("/dashboard");
   return { ok: true, message: "Rating removed." };
 }
+
+// ----------------------------------------------------------------- feedback
+// The FAQ promises members can send feedback and no such form existed. This is
+// that form's write path: create or update the member's own message.
+export async function sendFeedback(input: unknown): Promise<ActionOutcome> {
+  const parsed = feedbackSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Pick a type and write between 10 and 2000 characters." };
+  }
+
+  const member = requireMember(await auth(), VISITOR_MESSAGE);
+  if (!member.ok) return member;
+
+  // Two independent brakes: a per-hour window, and a cap on unresolved
+  // threads. The cap is what stops "send 10,000 suggestions" from burying the
+  // queue; the window is what stops the table filling in a single burst.
+  const limit = rateLimit(
+    `feedback:${member.userId}`,
+    FEEDBACK_PER_HOUR,
+    FEEDBACK_WINDOW_MS
+  );
+  if (!limit.ok) {
+    const hours = Math.max(1, Math.ceil(limit.retryAfterSeconds / 3600));
+    return {
+      ok: false,
+      error: `You have sent a lot of messages recently. Try again in about ${hours} hour${hours === 1 ? "" : "s"}.`,
+    };
+  }
+
+  if (parsed.data.feedbackId) {
+    const owned = await prisma.feedback.findFirst({
+      where: { id: parsed.data.feedbackId, user_id: member.userId },
+      select: { id: true, status: true },
+    });
+    if (!owned) return { ok: false, error: "That message no longer exists." };
+    if (owned.status === "RESOLVED") {
+      return {
+        ok: false,
+        error: "That message is already resolved — send a new one if there is more to say.",
+      };
+    }
+
+    try {
+      await prisma.feedback.update({
+        where: { id: owned.id },
+        data: { type: parsed.data.type, message: parsed.data.message },
+      });
+    } catch {
+      return { ok: false, error: "That message could not be saved. Please try again." };
+    }
+
+    revalidatePath("/dashboard");
+    revalidatePath("/admin");
+    return { ok: true, message: "Message updated." };
+  }
+
+  const openCount = await prisma.feedback.count({
+    where: { user_id: member.userId, status: { not: "RESOLVED" } },
+  });
+  if (openCount >= MAX_OPEN_FEEDBACK_PER_MEMBER) {
+    return {
+      ok: false,
+      error: `You already have ${openCount} unresolved messages. We will get to them — please wait for a reply before adding more.`,
+    };
+  }
+
+  try {
+    await prisma.feedback.create({
+      data: {
+        user_id: member.userId,
+        type: parsed.data.type,
+        message: parsed.data.message,
+        status: "OPEN",
+      },
+    });
+  } catch {
+    return { ok: false, error: "Your message could not be sent. Please try again." };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/admin");
+  return {
+    ok: true,
+    message: "Thanks — the team has your message and will take a look.",
+  };
+}
+
+/** A member may withdraw their own unresolved message. */
+export async function deleteOwnFeedback(feedbackId: string): Promise<ActionOutcome> {
+  const parsed = feedbackIdSchema.safeParse(feedbackId);
+  if (!parsed.success) return { ok: false, error: "That message no longer exists." };
+
+  const member = requireMember(await auth(), VISITOR_MESSAGE);
+  if (!member.ok) return member;
+
+  const owned = await prisma.feedback.findFirst({
+    where: { id: parsed.data, user_id: member.userId },
+    select: { id: true, status: true },
+  });
+  if (!owned) return { ok: false, error: "That message no longer exists." };
+  if (owned.status === "RESOLVED") {
+    return { ok: false, error: "Resolved messages are kept on record and cannot be removed." };
+  }
+
+  try {
+    await prisma.feedback.delete({ where: { id: owned.id } });
+  } catch {
+    return { ok: false, error: "That message could not be removed." };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/admin");
+  return { ok: true, message: "Message withdrawn." };
+}
+

@@ -27,8 +27,16 @@ import { EventManager, type EventRow } from "@/components/admin/event-manager";
 import { CharacterManager, type CharacterRow } from "@/components/admin/character-manager";
 import { CategoryManager, type CategoryRow } from "@/components/admin/category-manager";
 import { ArticleManager, type ArticleRow } from "@/components/admin/article-manager";
+import {
+  FeedbackManager,
+  type FeedbackAdminRow,
+} from "@/components/admin/feedback-manager";
 import type { CategoryOption } from "@/components/admin/manager-parts";
 import { parseEventTimeline } from "@/lib/safe-html";
+import {
+  FEEDBACK_STATUSES,
+  type FeedbackStatus,
+} from "@/lib/validations/admin";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -44,6 +52,7 @@ const TABS = [
   { value: "events", label: "Events" },
   { value: "characters", label: "Characters" },
   { value: "articles", label: "Articles" },
+  { value: "feedback", label: "Feedback" },
   { value: "fandoms", label: "Fandoms" },
   { value: "usage", label: "Usage" },
 ] as const;
@@ -84,6 +93,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     eventList,
     characterList,
     articleList,
+    feedbackList,
     categoryList,
     usage,
     categories,
@@ -96,6 +106,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     tab === "events" ? loadEventList() : null,
     tab === "characters" ? loadCharacterList() : null,
     tab === "articles" ? loadArticleList() : null,
+    tab === "feedback" ? loadFeedbackList() : null,
     tab === "fandoms" ? loadCategoryList() : null,
     tab === "usage" ? loadUsage() : null,
     needsCategories(tab) ? loadCategories() : null,
@@ -178,6 +189,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         />
       ) : null}
 
+      {feedbackList ? (
+        <FeedbackManager
+          rows={feedbackList.rows}
+          total={feedbackList.total}
+          openCount={feedbackList.openCount}
+        />
+      ) : null}
+
       {categoryList ? (
         <CategoryManager rows={categoryList.rows} total={categoryList.total} />
       ) : null}
@@ -240,21 +259,17 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Latest feedback</CardTitle>
+              <CardTitle>Feedback queue</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {usage.feedback.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No feedback submitted.</p>
-              ) : (
-                usage.feedback.map((item) => (
-                  <div key={item.id} className="rounded-lg bg-muted/60 p-3">
-                    <p className="text-xs text-muted-foreground">
-                      {item.author} · {item.type.toLowerCase()} · {item.status.toLowerCase()}
-                    </p>
-                    <p className="mt-1 text-sm">{item.message}</p>
-                  </div>
-                ))
-              )}
+              <p className="text-sm text-muted-foreground">
+                {usage.openFeedback === 0
+                  ? "Nothing unresolved. Members send feedback from their dashboard."
+                  : `${usage.openFeedback} message${usage.openFeedback === 1 ? "" : "s"} still waiting for a reply.`}
+              </p>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/admin?tab=feedback">Open the queue</Link>
+              </Button>
             </CardContent>
           </Card>
 
@@ -484,6 +499,49 @@ async function loadArticleList(): Promise<{ rows: ArticleRow[]; total: number }>
   };
 }
 
+async function loadFeedbackList(): Promise<{
+  rows: FeedbackAdminRow[];
+  total: number;
+  openCount: number;
+}> {
+  // The database returns them oldest-first; the JS sort below then partitions
+  // that into unresolved-then-resolved. Because Array.sort is stable, the
+  // within-group order stays chronological.
+  const [rows, total, openCount] = await Promise.all([
+    prisma.feedback.findMany({
+      orderBy: [{ created_at: "asc" }],
+      take: LIST_LIMIT,
+      include: { user: { select: { id: true, name: true, email: true, role: true } } },
+    }),
+    prisma.feedback.count(),
+    prisma.feedback.count({ where: { status: { not: "RESOLVED" } } }),
+  ]);
+
+  return {
+    total,
+    openCount,
+    // Unresolved before resolved: a new message must not push an old one off
+    // the top of the screen an admin is working through.
+    rows: rows
+      .map((row) => ({
+        id: row.id,
+        type: row.type,
+        message: row.message,
+        status: FEEDBACK_STATUSES.includes(row.status as never)
+          ? (row.status as FeedbackStatus)
+          : "OPEN",
+        createdAt: row.created_at.toISOString(),
+        user: row.user,
+      }))
+      .sort((a, b) => {
+        const rank = (status: FeedbackStatus) => (status === "RESOLVED" ? 1 : 0);
+        const difference = rank(a.status) - rank(b.status);
+        if (difference !== 0) return difference;
+        return a.createdAt.localeCompare(b.createdAt);
+      }),
+  };
+}
+
 async function loadCategoryList(): Promise<{ rows: CategoryRow[]; total: number }> {  const [rows, total] = await Promise.all([
     prisma.category.findMany({
       orderBy: { name: "asc" },
@@ -514,7 +572,7 @@ async function loadCategoryList(): Promise<{ rows: CategoryRow[]; total: number 
   };
 }
 
-async function loadUsage() {  const [topBookmarked, topRated, feedback, recentQueries] = await Promise.all([
+async function loadUsage() {  const [topBookmarked, topRated, openFeedback, recentQueries] = await Promise.all([
     prisma.bookmark.groupBy({
       by: ["content_id"],
       _count: { _all: true },
@@ -529,11 +587,7 @@ async function loadUsage() {  const [topBookmarked, topRated, feedback, recentQu
       take: 5,
       where: { ratingType: "STARS" },
     }),
-    prisma.feedback.findMany({
-      orderBy: { created_at: "desc" },
-      take: 5,
-      include: { user: { select: { name: true } } },
-    }),
+    prisma.feedback.count({ where: { status: { not: "RESOLVED" } } }),
     prisma.chatbotQuery.findMany({
       orderBy: { created_at: "desc" },
       take: 6,
@@ -568,13 +622,7 @@ async function loadUsage() {  const [topBookmarked, topRated, feedback, recentQu
     })),
     bookmarkTitles: new Map(bookmarkItems.map((item) => [item.id, item.title])),
     ratingTitles: new Map(ratingItems.map((item) => [item.id, item.title])),
-    feedback: feedback.map((item) => ({
-      id: item.id,
-      message: item.message,
-      type: item.type,
-      status: item.status,
-      author: item.user.name,
-    })),
+    openFeedback,
     recentQueries: recentQueries.map((item) => ({
       id: item.id,
       message: item.message,

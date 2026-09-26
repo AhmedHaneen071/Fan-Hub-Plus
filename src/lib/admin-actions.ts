@@ -20,9 +20,11 @@ import {
   merchSchema,
   blankToNull,
   combineEventDate,
+  feedbackStatusSchema,
   parseDateOrNull,
   parseNumberOrNull,
   timelineToJson,
+  FEEDBACK_STATUS_LABEL,
 } from "@/lib/validations/admin";
 
 export type AdminResult =
@@ -609,4 +611,58 @@ export async function deleteArticle(id: string): Promise<AdminResult> {
   revalidateArticles(id);
   return { ok: true, message: `"${existing.title}" removed.` };
 }
+
+// ------------------------------------------------------------------ feedback
+// Admin moderation of the messages members send from the dashboard.
+export async function setFeedbackStatus(input: unknown): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = feedbackStatusSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "That status is not one the queue uses." };
+  }
+
+  const { feedbackId, status } = parsed.data;
+  const existing = await prisma.feedback.findUnique({
+    where: { id: feedbackId },
+    select: { id: true },
+  });
+  if (!existing) return { ok: false, error: "That message no longer exists." };
+
+  try {
+    await prisma.feedback.update({ where: { id: feedbackId }, data: { status } });
+  } catch {
+    return { ok: false, error: "That status could not be saved. Please try again." };
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  return { ok: true, message: `Message ${FEEDBACK_STATUS_LABEL[status]}.` };
+}
+
+export async function deleteFeedback(id: string): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = z.string().trim().min(1).max(60).safeParse(id);
+  if (!parsed.success) return { ok: false, error: "That message no longer exists." };
+
+  const existing = await prisma.feedback.findUnique({
+    where: { id: parsed.data },
+    select: { id: true },
+  });
+  if (!existing) return { ok: false, error: "That message no longer exists." };
+
+  try {
+    await prisma.feedback.delete({ where: { id: existing.id } });
+  } catch {
+    return { ok: false, error: "That message could not be removed." };
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  return { ok: true, message: "Message deleted." };
+}
+
 

@@ -21,14 +21,16 @@ import {
   type BookmarkRow,
 } from "@/components/dashboard/bookmarks-tab";
 import { RatingsTab, type RatingRow } from "@/components/dashboard/ratings-tab";
+import { FeedbackTab, type FeedbackRow } from "@/components/dashboard/feedback-tab";
 import { CATEGORY_LABELS, type CategoryValue } from "@/lib/constants";
+import { FEEDBACK_STATUSES } from "@/lib/validations/admin";
 
 export const metadata: Metadata = {
   title: "Dashboard",
   description: "Your Fan Hub Plus activity at a glance.",
 };
 
-const TABS = ["overview", "bookmarks", "ratings"] as const;
+const TABS = ["overview", "bookmarks", "ratings", "feedback"] as const;
 type Tab = (typeof TABS)[number];
 
 type DashboardPageProps = {
@@ -46,7 +48,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const userId = session.user.id;
 
   // All the data the tabs need, fetched in parallel.
-  const [user, categories, bookmarkRows, ratingRows] = await Promise.all([
+  const [user, categories, bookmarkRows, ratingRows, feedbackRows] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -73,6 +75,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       where: { user_id: userId },
       include: { content: { select: { id: true, title: true } } },
       orderBy: { created_at: "desc" },
+    }),
+    prisma.feedback.findMany({
+      where: { user_id: userId },
+      orderBy: { created_at: "desc" },
+      take: 20,
     }),
   ]);
 
@@ -115,6 +122,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ratingType: rating.ratingType,
     createdAt: rating.created_at.toISOString(),
     content: rating.content,
+  }));
+
+  // Feedback.status is a plain String column, so it is narrowed here rather
+  // than cast at the render site: a value the UI does not know about falls back
+  // to OPEN instead of silently disappearing from the member's history.
+  const feedback: FeedbackRow[] = feedbackRows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    message: row.message,
+    status: FEEDBACK_STATUSES.includes(row.status as never)
+      ? (row.status as FeedbackRow["status"])
+      : "OPEN",
+    createdAt: row.created_at.toISOString(),
   }));
 
   const favorites = new Set(
@@ -221,6 +241,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       {tab === "bookmarks" ? <BookmarksTab rows={bookmarks} /> : null}
       {tab === "ratings" ? <RatingsTab rows={ratings} /> : null}
+      {tab === "feedback" ? <FeedbackTab rows={feedback} /> : null}
 
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Heart className="size-3.5 text-primary" aria-hidden="true" />
