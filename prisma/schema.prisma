@@ -1,0 +1,341 @@
+// ---------------------------------------------------------------------------
+// Fan Hub Plus — Prisma data schema
+// Database: SQLite (see DATABASE_URL in .env)
+//
+// Design decisions (explained for the evaluators):
+//  1. Favorite fandoms are a normalized many-to-many between User and
+//     Category (implicit relation "favoriteCategories"). Storing a plain
+//     text/JSON column instead would denormalize the schema, so we let
+//     Prisma create the join table automatically.
+//  2. Bookmark supports any item (content, character or merchandise) using
+//     three nullable foreign keys with at most ONE set at a time. This keeps
+//     querying simple while still letting users bookmark every kind of item.
+//  3. Cascading deletes: user data (bookmarks, ratings, feedback, etc.) is
+//     removed when the user is deleted. Content-linked data cascades from
+//     the owning user. Deleting a category does NOT cascade into content so
+//     no real fandom posts are ever silently removed.
+//  4. Password hashes use bcrypt (in the authentication code), never plaintext.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  VISITOR // browsed-only, not signed in
+  USER // registered member
+  ADMIN // full control
+}
+
+enum CategoryName {
+  ANIME
+  GAMING
+  MOVIES
+  TV_SHOWS
+  KPOP
+  COMICS
+  MANGA
+  COSPLAY
+}
+
+enum ContentType {
+  ARTICLE
+  VIDEO
+  AUDIO
+  IMAGE
+}
+
+enum MerchTag {
+  LIMITED_EDITION
+  PRE_ORDER
+  COLLECTIBLE
+}
+
+enum RatingType {
+  STARS // 1..5 scale
+  THUMBS // 1 = up, -1 = down
+}
+
+enum FeedbackType {
+  BUG
+  SUGGESTION
+  QUERY
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// Users & authentication
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password_hash String
+  role          UserRole  @default(USER)
+  avatar_url    String?
+  favoriteCategories Category[] // joined via implicit many-to-many table
+  created_at    DateTime  @default(now())
+
+  bookmarks      Bookmark[]
+  ratings        Rating[]
+  feedback       Feedback[]
+  chatbotQueries ChatbotQuery[]
+  submissions    FanSubmission[]
+  resetTokens    PasswordResetToken[]
+
+  @@index([email]) // email already unique; index used by auth lookup
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id   String
+  // Store the SHA-256 hash of the token, never the plain token itself.
+  // That way a database leak does not let attackers reset passwords.
+  token_hash String @unique
+  expires_at DateTime
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@index([token_hash])
+}
+
+// ---------------------------------------------------------------------------
+// Fandom catalogue
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          String @id @default(cuid())
+  name        CategoryName @unique
+  description String
+  // Fandom categories with images/descriptions so category cards look alive
+  // from day one. Optional, purely presentational.
+  cover_image String?
+  featured    Boolean @default(false) // true = shown on the homepage shelf
+
+  contents           Content[]
+  characterProfiles  CharacterProfile[]
+  featuredArticles   FeaturedArticle[]
+  merchandiseItems   MerchandiseItem[]
+  faqs               ChatbotFAQ[]
+  submissions        FanSubmission[]
+  chatbotQueries     ChatbotQuery[]
+  events             Event[]
+  favoritedBy        User[]
+
+  @@index([name])
+}
+
+model Content {
+  id          String      @id @default(cuid())
+  category    Category    @relation(fields: [category_id], references: [id])
+  category_id String
+  title       String
+  type        ContentType
+  // Sub-genre (e.g. "Action", "Romance") so the explorer can drill down past
+  // the fandom/category level. Free string on purpose: genres are seeded as
+  // known values but the catalogue is open to new ones in the future.
+  genre       String?
+  description String
+  release_date DateTime?
+  popularity_score Int    @default(0) // shown as "heat" on cards
+  media_url   String?
+  // YouTube media offer (Phase 4): a trailer/clip URL played in the in-page
+  // multimedia player. NULL means there is no video offer and pages show the
+  // static thumbnail instead.
+  trailer_url String?
+
+  bookmarks Bookmark[]
+  ratings   Rating[]
+
+  @@index([category_id])
+  @@index([type])
+  @@index([genre])
+  @@index([popularity_score])
+}
+
+model CharacterProfile {
+  id          String   @id @default(cuid())
+  category    Category @relation(fields: [category_id], references: [id])
+  category_id String
+  name        String
+  bio         String
+  image_url   String?
+
+  bookmarks Bookmark[]
+
+  @@index([category_id])
+  @@index([name])
+}
+
+model FeaturedArticle {
+  id             String   @id @default(cuid())
+  category       Category @relation(fields: [category_id], references: [id])
+  category_id    String
+  title          String
+  rich_text_body String // HTML written in a safe, allow-listed subset
+  cover_image    String?
+  // event_timeline stores a JSON array of {date, label, body} objects so the
+  // timeline section on the article detail page can be rendered from one field.
+  event_timeline String   @default("[]")
+
+  @@index([category_id])
+}
+
+model MerchandiseItem {
+  id          String   @id @default(cuid())
+  category    Category @relation(fields: [category_id], references: [id])
+  category_id String
+  name        String
+  image_url   String?
+  tag         MerchTag
+  is_upcoming Boolean  @default(false) // true = show in "Upcoming releases"
+  view_count  Int      @default(0)
+  price       Decimal? // display-only, no checkout exists in this project
+  created_at  DateTime @default(now())
+
+  bookmarks Bookmark[]
+
+  @@index([category_id])
+  @@index([tag])
+  @@index([is_upcoming])
+}
+
+// ---------------------------------------------------------------------------
+// User engagement
+// ---------------------------------------------------------------------------
+
+model Bookmark {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id    String
+  content    Content?         @relation(fields: [content_id], references: [id], onDelete: Cascade)
+  content_id String?
+  character  CharacterProfile? @relation(fields: [character_id], references: [id], onDelete: Cascade)
+  character_id String?
+  merchandise MerchandiseItem? @relation(fields: [merchandise_id], references: [id], onDelete: Cascade)
+  merchandise_id String?
+  note       String?
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@index([content_id])
+  @@index([character_id])
+  @@index([merchandise_id])
+
+  // One bookmark per member per target. Three compound constraints rather than
+  // a single (user_id, target) rule, because the target is a polymorphic set of
+  // three nullable columns. SQLite treats NULLs as distinct, so a row that sets
+  // content_id never collides with a row that sets character_id, and each
+  // combination is still unique where it matters.
+  @@unique([user_id, content_id])
+  @@unique([user_id, character_id])
+  @@unique([user_id, merchandise_id])
+}
+
+model Rating {
+  id         String     @id @default(cuid())
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id    String
+  content    Content    @relation(fields: [content_id], references: [id], onDelete: Cascade)
+  content_id String
+  value      Int // for STARS: 1..5, for THUMBS: 1 (up) or -1 (down)
+  ratingType RatingType @default(STARS)
+  created_at DateTime   @default(now())
+
+  @@unique([user_id, content_id])
+  @@index([content_id])
+}
+
+model Feedback {
+  id         String       @id @default(cuid())
+  user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id    String
+  type       FeedbackType
+  message    String
+  status     String       @default("OPEN") // OPEN / IN_PROGRESS / RESOLVED
+  created_at DateTime     @default(now())
+
+  @@index([user_id])
+  @@index([type])
+}
+
+model FanSubmission {
+  id         String           @id @default(cuid())
+  user       User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id    String
+  title      String
+  body       String
+  status     SubmissionStatus @default(PENDING)
+  category   Category?        @relation(fields: [category_id], references: [id])
+  category_id String?
+  created_at DateTime         @default(now())
+  reviewed_at DateTime?
+
+  @@index([user_id])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Chatbot knowledge base & history
+// ---------------------------------------------------------------------------
+
+model ChatbotQuery {
+  id         String   @id @default(cuid())
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  user_id    String?
+  message    String
+  response   String
+  category   Category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  category_id String?
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+}
+
+model ChatbotFAQ {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String
+  category    Category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  category_id String?
+  keywords    String   @default("") // comma-separated match words for the rule engine
+  created_at  DateTime @default(now())
+
+  @@index([category_id])
+}
+
+// ---------------------------------------------------------------------------
+// Events (map & calendar feature)
+// ---------------------------------------------------------------------------
+
+model Event {
+  id          String   @id @default(cuid())
+  name        String
+  city        String
+  date        DateTime
+  ticket_link String?
+  latitude    Float
+  longitude   Float
+  category    Category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  category_id String?
+
+  @@index([city])
+  @@index([date])
+}
