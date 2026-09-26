@@ -7,7 +7,7 @@
 import type { Metadata } from "next";
 import { CalendarDays, MapPin, Ticket } from "lucide-react";
 import { Breadcrumbs } from "@/components/explore/breadcrumbs";
-import { EventsMap } from "@/components/events/events-map";
+import { EventsMap } from "@/components/events/events-map-loader";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getUpcomingEvents, formatEventDate } from "@/lib/queries/events";

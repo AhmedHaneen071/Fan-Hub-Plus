@@ -25,6 +25,10 @@ export async function getUpcomingEvents() {
   }));
 }
 
+// Event datetimes are stored as the wall-clock time an admin typed (see
+// combineEventDate() in lib/validations/admin.ts), so they are formatted in UTC
+// too. Without this the host timezone silently shifts every event by its
+// offset — an 11:15 entry renders as 4:15 PM on a UTC+5 machine.
 export function formatEventDate(iso: string): string {
   return new Intl.DateTimeFormat("en", {
     weekday: "short",
@@ -33,5 +37,6 @@ export function formatEventDate(iso: string): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "UTC",
   }).format(new Date(iso));
 }

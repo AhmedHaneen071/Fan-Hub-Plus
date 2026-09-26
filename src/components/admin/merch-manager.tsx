@@ -50,6 +50,7 @@ import {
   type CategoryOption,
 } from "@/components/admin/manager-parts";
 import { deleteMerch, saveMerch } from "@/lib/admin-actions";
+import { formatPrice } from "@/lib/queries/merch";
 import { MERCH_TAGS, MERCH_TAG_LABELS, merchSchema, type MerchInput } from "@/lib/validations/admin";
 
 export type MerchRow = {
@@ -164,7 +165,7 @@ export function MerchManager({
             <p className="pt-1 text-sm text-muted-foreground">
               {row.price === null || row.price === ""
                 ? "No price listed"
-                : `$${row.price}`}{" "}
+                : formatPrice(row.price)}{" "}
               · {row.view_count} view(s) · {row.bookmarks} bookmark(s)
             </p>
           </ManagerRow>
