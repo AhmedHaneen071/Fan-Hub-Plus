@@ -24,6 +24,8 @@ import { FaqManager, type FaqRow } from "@/components/admin/faq-manager";
 import { ContentManager, type ContentRow } from "@/components/admin/content-manager";
 import { MerchManager, type MerchRow } from "@/components/admin/merch-manager";
 import { EventManager, type EventRow } from "@/components/admin/event-manager";
+import { CharacterManager, type CharacterRow } from "@/components/admin/character-manager";
+import { CategoryManager, type CategoryRow } from "@/components/admin/category-manager";
 import type { CategoryOption } from "@/components/admin/manager-parts";
 
 export const metadata: Metadata = {
@@ -38,6 +40,8 @@ const TABS = [
   { value: "content", label: "Content" },
   { value: "merch", label: "Merch" },
   { value: "events", label: "Events" },
+  { value: "characters", label: "Characters" },
+  { value: "fandoms", label: "Fandoms" },
   { value: "usage", label: "Usage" },
 ] as const;
 
@@ -68,17 +72,30 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   // Only the active tab is loaded. This page used to run one big Promise.all
   // for every panel regardless of which tab was open, so opening "Bot rules"
   // still counted users, grouped ratings and pulled the submission queue.
-  const [overview, submissions, faqs, contentList, merchList, eventList, usage, categories] =
-    await Promise.all([
-      tab === "overview" ? loadOverview() : null,
-      tab === "submissions" ? loadSubmissions() : null,
-      tab === "faqs" ? loadFaqs() : null,
-      tab === "content" ? loadContentList() : null,
-      tab === "merch" ? loadMerchList() : null,
-      tab === "events" ? loadEventList() : null,
-      tab === "usage" ? loadUsage() : null,
-      isCatalogueTab(tab) ? loadCategories() : null,
-    ]);
+  const [
+    overview,
+    submissions,
+    faqs,
+    contentList,
+    merchList,
+    eventList,
+    characterList,
+    categoryList,
+    usage,
+    categories,
+  ] = await Promise.all([
+    tab === "overview" ? loadOverview() : null,
+    tab === "submissions" ? loadSubmissions() : null,
+    tab === "faqs" ? loadFaqs() : null,
+    tab === "content" ? loadContentList() : null,
+    tab === "merch" ? loadMerchList() : null,
+    tab === "events" ? loadEventList() : null,
+    tab === "characters" ? loadCharacterList() : null,
+    tab === "fandoms" ? loadCategoryList() : null,
+    tab === "usage" ? loadUsage() : null,
+    needsCategories(tab) ? loadCategories() : null,
+  ]);
+
 
   return (
     <div className="space-y-8">
@@ -146,6 +163,18 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       {eventList && categories ? (
         <EventManager rows={eventList.rows} total={eventList.total} categories={categories} />
+      ) : null}
+
+      {characterList && categories ? (
+        <CharacterManager
+          rows={characterList.rows}
+          total={characterList.total}
+          categories={categories}
+        />
+      ) : null}
+
+      {categoryList ? (
+        <CategoryManager rows={categoryList.rows} total={categoryList.total} />
       ) : null}
 
       {usage ? (
@@ -241,9 +270,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   );
 }
 
-function isCatalogueTab(tab: Tab): boolean {
-  return tab === "content" || tab === "merch" || tab === "events";
+/** Tabs whose form writes a category foreign key, so they need the picker data. */
+function needsCategories(tab: Tab): boolean {
+  return tab === "content" || tab === "merch" || tab === "events" || tab === "characters";
 }
+
 
 // ------------------------------------------------------------------- loaders
 async function loadOverview() {
@@ -385,8 +416,62 @@ async function loadEventList(): Promise<{ rows: EventRow[]; total: number }> {
   };
 }
 
-async function loadUsage() {
-  const [topBookmarked, topRated, feedback, recentQueries] = await Promise.all([
+async function loadCharacterList(): Promise<{ rows: CharacterRow[]; total: number }> {
+  const [rows, total] = await Promise.all([
+    prisma.characterProfile.findMany({
+      orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
+      take: LIST_LIMIT,
+      include: { category: { select: { name: true } }, _count: { select: { bookmarks: true } } },
+    }),
+    prisma.characterProfile.count(),
+  ]);
+
+  return {
+    total,
+    rows: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      bio: row.bio,
+      image_url: row.image_url,
+      category_id: row.category_id,
+      category_name: row.category.name,
+      bookmarks: row._count.bookmarks,
+    })),
+  };
+}
+
+async function loadCategoryList(): Promise<{ rows: CategoryRow[]; total: number }> {
+  const [rows, total] = await Promise.all([
+    prisma.category.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        _count: {
+          select: { contents: true, characterProfiles: true, merchandiseItems: true, events: true },
+        },
+      },
+    }),
+    prisma.category.count(),
+  ]);
+
+  return {
+    total,
+    rows: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      cover_image: row.cover_image,
+      featured: row.featured,
+      counts: {
+        contents: row._count.contents,
+        characters: row._count.characterProfiles,
+        merch: row._count.merchandiseItems,
+        events: row._count.events,
+      },
+    })),
+  };
+}
+
+async function loadUsage() {  const [topBookmarked, topRated, feedback, recentQueries] = await Promise.all([
     prisma.bookmark.groupBy({
       by: ["content_id"],
       _count: { _all: true },

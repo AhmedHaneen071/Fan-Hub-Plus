@@ -159,6 +159,40 @@ export const eventSchema = z.object({
 
 export type EventInput = z.infer<typeof eventSchema>;
 
+// ------------------------------------------------------------------- category
+// A Category row's identity is its `name`, and that column is the CategoryName
+// enum. So an admin cannot invent a new fandom or rename an existing one from
+// here — the set of fandoms is a schema change, not a content edit. What IS
+// presentation data is description / cover_image / featured, which is what the
+// category cards and the home page shelf render, so that is what this edits.
+export const categorySchema = z.object({
+  id: z.string().trim().min(1, "Missing category."),
+  description: z
+    .string()
+    .trim()
+    .min(10, "Write at least a sentence — this is the blurb on the category card.")
+    .max(400, "Keep the description under 400 characters."),
+  coverImage: optionalUrl,
+  featured: z.boolean(),
+});
+
+export type CategoryInput = z.infer<typeof categorySchema>;
+
+// ------------------------------------------------------------------ character
+export const characterSchema = z.object({
+  id: z.string().trim().max(60).optional(),
+  categoryId,
+  name: z.string().trim().min(2, "Name is required.").max(80),
+  bio: z
+    .string()
+    .trim()
+    .min(10, "Write at least a sentence so the profile has something to show.")
+    .max(600, "Keep the bio under 600 characters."),
+  imageUrl: optionalUrl,
+});
+
+export type CharacterInput = z.infer<typeof characterSchema>;
+
 // ------------------------------------------------------------------ helpers
 // Exported so the admin action and the client forms agree on what "cleared"
 // means, instead of each side inventing its own empty-string handling.

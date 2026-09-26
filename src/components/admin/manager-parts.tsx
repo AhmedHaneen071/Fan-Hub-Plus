@@ -53,8 +53,10 @@ export function ManagerHeader({
   description: string;
   count: number;
   total: number;
-  addLabel: string;
-  onAdd: () => void;
+  // Omitted by managers that have nothing to add — the fandom manager only
+  // edits the fixed set of CategoryName rows.
+  addLabel?: string;
+  onAdd?: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -64,10 +66,12 @@ export function ManagerHeader({
           {count === total ? `${count} shown` : `Showing the first ${count} of ${total}.`}
         </p>
       </div>
-      <Button type="button" onClick={onAdd}>
-        <Plus aria-hidden="true" />
-        {addLabel}
-      </Button>
+      {addLabel && onAdd ? (
+        <Button type="button" onClick={onAdd}>
+          <Plus aria-hidden="true" />
+          {addLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -80,8 +84,10 @@ export function ManagerRow({
 }: {
   children: React.ReactNode;
   onEdit: () => void;
-  onDelete: () => void;
-  deleteLabel: string;
+  // Omitted by managers whose rows cannot be deleted (the fandom manager), so
+  // the row never shows a button that would do nothing.
+  onDelete?: () => void;
+  deleteLabel?: string;
 }) {
   return (
     <li className="rounded-xl border bg-card p-4">
@@ -92,16 +98,18 @@ export function ManagerRow({
             <Pencil aria-hidden="true" />
             Edit
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={onDelete}
-            aria-label={deleteLabel}
-          >
-            <Trash2 aria-hidden="true" />
-          </Button>
+          {onDelete ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={onDelete}
+              aria-label={deleteLabel}
+            >
+              <Trash2 aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
       </div>
     </li>

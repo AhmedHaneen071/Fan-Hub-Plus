@@ -12,6 +12,8 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  categorySchema,
+  characterSchema,
   contentSchema,
   eventSchema,
   merchSchema,
@@ -55,6 +57,15 @@ function revalidateCatalogue(detail?: { contentId?: string; merchId?: string }) 
   revalidatePath("/admin");
   if (detail?.contentId) revalidatePath(`/content/${detail.contentId}`);
   if (detail?.merchId) revalidatePath(`/merch/${detail.merchId}`);
+}
+
+/** Characters and the fandom shelves they appear on. */
+function revalidateCharacters(characterId?: string) {
+  revalidatePath("/characters");
+  revalidatePath("/explore");
+  revalidatePath("/");
+  revalidatePath("/admin");
+  if (characterId) revalidatePath(`/characters/${characterId}`);
 }
 
 // ------------------------------------------------------- submission review
@@ -411,4 +422,117 @@ export async function deleteEvent(id: string): Promise<AdminResult> {
 
   revalidateCatalogue();
   return { ok: true, message: `"${existing.name}" removed from the calendar.` };
+}
+
+// ===========================================================================
+// Fandom presentation + characters
+// ===========================================================================
+
+/**
+ * Updates a fandom's presentation fields.
+ *
+ * There is deliberately no create or delete here. `Category.name` is the
+ * CategoryName enum and the unique key of the row, so the eight fandoms are
+ * fixed by the schema; and the migration puts every referencing table on
+ * ON DELETE RESTRICT, so deleting one would be refused by the database the
+ * moment any content, character, article, merch item or event pointed at it.
+ * Both operations are schema changes, not admin edits.
+ */
+export async function saveCategory(input: unknown): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = categorySchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
+
+  const { id, description, featured } = parsed.data;
+
+  const existing = await prisma.category.findUnique({
+    where: { id },
+    select: { id: true, name: true },
+  });
+  if (!existing) return { ok: false, error: "That fandom no longer exists." };
+
+  try {
+    await prisma.category.update({
+      where: { id },
+      data: {
+        description,
+        cover_image: blankToNull(parsed.data.coverImage),
+        featured,
+      },
+    });
+  } catch {
+    return { ok: false, error: "That fandom could not be saved. Please try again." };
+  }
+
+  revalidateCharacters();
+  revalidateCatalogue();
+  return { ok: true, message: `${existing.name} updated.` };
+}
+
+// ------------------------------------------------------------------- character
+export async function saveCharacter(input: unknown): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = characterSchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
+
+  const { id, categoryId: category, name, bio } = parsed.data;
+
+  if (!(await categoryExists(category))) {
+    return { ok: false, error: "Pick a fandom from the list." };
+  }
+
+  const data = {
+    category_id: category,
+    name,
+    bio,
+    image_url: blankToNull(parsed.data.imageUrl),
+  };
+
+  try {
+    if (id) {
+      const existing = await prisma.characterProfile.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) return { ok: false, error: "That character no longer exists." };
+      await prisma.characterProfile.update({ where: { id }, data });
+    } else {
+      await prisma.characterProfile.create({ data });
+    }
+  } catch {
+    return { ok: false, error: "That character could not be saved. Please try again." };
+  }
+
+  revalidateCharacters(id);
+  return { ok: true, message: id ? "Character updated." : "Character added." };
+}
+
+export async function deleteCharacter(id: string): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const existing = await prisma.characterProfile.findUnique({
+    where: { id },
+    select: { id: true, name: true, _count: { select: { bookmarks: true } } },
+  });
+  if (!existing) return { ok: false, error: "That character no longer exists." };
+
+  // Bookmark_character_id_fkey is ON DELETE CASCADE, so the bookmarks go too.
+  const detail =
+    existing._count.bookmarks > 0
+      ? ` along with ${existing._count.bookmarks} bookmark(s)`
+      : "";
+
+  try {
+    await prisma.characterProfile.delete({ where: { id } });
+  } catch {
+    return { ok: false, error: "That character could not be removed." };
+  }
+
+  revalidateCharacters(id);
+  return { ok: true, message: `"${existing.name}" removed${detail}.` };
 }
