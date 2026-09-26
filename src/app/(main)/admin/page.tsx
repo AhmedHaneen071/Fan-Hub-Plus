@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // Fan Hub Plus — admin area  (/admin)   (Phase 11)
 // Role-gated management console: overview stats, the fan-submission
-// moderation queue, the chatbot knowledge base and usage numbers. Only an
-// ADMIN session may proceed; the guard repeats on every server action.
+// moderation queue, the chatbot knowledge base, usage numbers and — since
+// Phase 2 — CRUD for the catalogue itself. Only an ADMIN session may proceed;
+// the guard repeats on every server action.
 // ---------------------------------------------------------------------------
 
 import type { Metadata } from "next";
@@ -20,14 +21,34 @@ import {
   type SubmissionRow,
 } from "@/components/admin/submissions-manager";
 import { FaqManager, type FaqRow } from "@/components/admin/faq-manager";
+import { ContentManager, type ContentRow } from "@/components/admin/content-manager";
+import { MerchManager, type MerchRow } from "@/components/admin/merch-manager";
+import { EventManager, type EventRow } from "@/components/admin/event-manager";
+import type { CategoryOption } from "@/components/admin/manager-parts";
 
 export const metadata: Metadata = {
   title: "Admin",
   description: "Fan Hub Plus administration.",
 };
 
-const TABS = ["overview", "submissions", "faqs", "usage"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = [
+  { value: "overview", label: "Overview" },
+  { value: "submissions", label: "Submissions" },
+  { value: "faqs", label: "Bot rules" },
+  { value: "content", label: "Content" },
+  { value: "merch", label: "Merch" },
+  { value: "events", label: "Events" },
+  { value: "usage", label: "Usage" },
+] as const;
+
+type Tab = (typeof TABS)[number]["value"];
+
+const TAB_VALUES = TABS.map((item) => item.value) as readonly string[];
+
+// A catalogue tab renders every row, so it needs a ceiling. Beyond this an
+// admin cannot reach the older entries — see the follow-up note in the manager
+// header. Search and pagination are the honest fix, and they are not here yet.
+const LIST_LIMIT = 200;
 
 type AdminPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -40,91 +61,24 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const raw = await searchParams;
   const requested = Array.isArray(raw.tab) ? raw.tab[0] : raw.tab;
-  const tab: Tab = (TABS as readonly string[]).includes(requested ?? "")
+  const tab: Tab = TAB_VALUES.includes(requested ?? "")
     ? (requested as Tab)
     : "overview";
 
-  const [
-    stats,
-    submissions,
-    faqs,
-    topBookmarked,
-    topRated,
-    feedback,
-    recentQueries,
-  ] = await Promise.all([
-    prisma.$transaction([
-      prisma.user.count({ where: { role: "USER" } }),
-      prisma.content.count(),
-      prisma.merchandiseItem.count(),
-      prisma.event.count(),
-      prisma.fanSubmission.count({ where: { status: "PENDING" } }),
-      prisma.chatbotFAQ.count(),
-      prisma.bookmark.count(),
-      prisma.rating.count(),
-    ]),
-    prisma.fanSubmission.findMany({
-      orderBy: { created_at: "desc" },
-      take: 30,
-      include: { user: { select: { name: true, email: true } }, category: { select: { name: true } } },
-    }),
-    prisma.chatbotFAQ.findMany({ orderBy: { created_at: "asc" } }),
-    prisma.bookmark.groupBy({
-      by: ["content_id"],
-      _count: { _all: true },
-      orderBy: { _count: { content_id: "desc" } },
-      take: 5,
-      where: { content_id: { not: null } },
-    }),
-    prisma.rating.groupBy({
-      by: ["content_id"],
-      _avg: { value: true },
-      _count: { _all: true },
-      orderBy: { _count: { content_id: "desc" } },
-      take: 5,
-      where: { ratingType: "STARS" },
-    }),
-    prisma.feedback.findMany({
-      orderBy: { created_at: "desc" },
-      take: 5,
-      include: { user: { select: { name: true } } },
-    }),
-    prisma.chatbotQuery.findMany({
-      orderBy: { created_at: "desc" },
-      take: 6,
-      include: { user: { select: { name: true } } },
-    }),
-  ]);
-
-  const [users, contents, merch, events, pending, ruleCount, bookmarks, ratings] = stats;
-
-  // Resolve names for the "top content" lists.
-  const bookmarkIds = topBookmarked.map((row) => row.content_id).filter(Boolean) as string[];
-  const ratingIds = topRated.map((row) => row.content_id).filter(Boolean) as string[];
-  const [bookmarkItems, ratingItems] = await Promise.all([
-    prisma.content.findMany({ where: { id: { in: bookmarkIds } }, select: { id: true, title: true } }),
-    prisma.content.findMany({ where: { id: { in: ratingIds } }, select: { id: true, title: true } }),
-  ]);
-  const bookmarkTitleById = new Map(bookmarkItems.map((item) => [item.id, item.title]));
-  const ratingTitleById = new Map(ratingItems.map((item) => [item.id, item.title]));
-
-  const submissionRows: SubmissionRow[] = submissions.map((submission) => ({
-    id: submission.id,
-    title: submission.title,
-    body: submission.body,
-    status: submission.status,
-    createdAt: submission.created_at.toISOString(),
-    author: submission.user.name,
-    authorEmail: submission.user.email,
-    category: submission.category?.name ?? null,
-  }));
-
-  const faqRows: FaqRow[] = faqs.map((faq) => ({
-    id: faq.id,
-    question: faq.question,
-    answer: faq.answer,
-    keywords: faq.keywords,
-  }));
+  // Only the active tab is loaded. This page used to run one big Promise.all
+  // for every panel regardless of which tab was open, so opening "Bot rules"
+  // still counted users, grouped ratings and pulled the submission queue.
+  const [overview, submissions, faqs, contentList, merchList, eventList, usage, categories] =
+    await Promise.all([
+      tab === "overview" ? loadOverview() : null,
+      tab === "submissions" ? loadSubmissions() : null,
+      tab === "faqs" ? loadFaqs() : null,
+      tab === "content" ? loadContentList() : null,
+      tab === "merch" ? loadMerchList() : null,
+      tab === "events" ? loadEventList() : null,
+      tab === "usage" ? loadUsage() : null,
+      isCatalogueTab(tab) ? loadCategories() : null,
+    ]);
 
   return (
     <div className="space-y-8">
@@ -141,7 +95,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </Badge>
         </div>
         <p className="text-muted-foreground">
-          Moderation, knowledge base and hub statistics.
+          Moderation, knowledge base, catalogue management and hub statistics.
         </p>
       </header>
 
@@ -149,54 +103,72 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       <nav aria-label="Admin sections" className="flex flex-wrap gap-1 border-b border-rose-100 pb-px dark:border-rose-500/20">
         {TABS.map((item) => (
           <Button
-            key={item}
+            key={item.value}
             asChild
-            variant={tab === item ? "secondary" : "ghost"}
-            className={tab === item ? "rounded-b-none border-x border-t border-rose-100 dark:border-rose-500/20" : "rounded-b-none capitalize text-muted-foreground"}
-            aria-current={tab === item ? "page" : undefined}
+            variant={tab === item.value ? "secondary" : "ghost"}
+            className={tab === item.value ? "rounded-b-none border-x border-t border-rose-100 dark:border-rose-500/20" : "rounded-b-none text-muted-foreground"}
+            aria-current={tab === item.value ? "page" : undefined}
           >
-            <Link href={`/admin?tab=${item}`}>{item}</Link>
+            <Link href={`/admin?tab=${item.value}`}>{item.label}</Link>
           </Button>
         ))}
       </nav>
 
-      {tab === "overview" ? (
+      {overview ? (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={Users} label="Registered fans" value={users} />
-          <StatCard icon={Package} label="Catalogue items" value={contents} />
-          <StatCard icon={Bookmark} label="Bookmarks" value={bookmarks} />
-          <StatCard icon={Star} label="Ratings given" value={ratings} />
-          <StatCard icon={Sparkles} label="Fan submissions" value={pending} alert={pending > 0} />
-          <StatCard icon={MessageSquare} label="Bot rules" value={ruleCount} />
-          <StatCard icon={Package} label="Merch items" value={merch} />
-          <StatCard icon={Users} label="Events" value={events} />
+          <StatCard icon={Users} label="Registered fans" value={overview.users} />
+          <StatCard icon={Package} label="Catalogue items" value={overview.contents} />
+          <StatCard icon={Bookmark} label="Bookmarks" value={overview.bookmarks} />
+          <StatCard icon={Star} label="Ratings given" value={overview.ratings} />
+          <StatCard
+            icon={Sparkles}
+            label="Fan submissions"
+            value={overview.pending}
+            alert={overview.pending > 0}
+          />
+          <StatCard icon={MessageSquare} label="Bot rules" value={overview.ruleCount} />
+          <StatCard icon={Package} label="Merch items" value={overview.merch} />
+          <StatCard icon={Users} label="Events" value={overview.events} />
         </div>
       ) : null}
 
-      {tab === "submissions" ? <SubmissionsManager rows={submissionRows} /> : null}
+      {submissions ? <SubmissionsManager rows={submissions} /> : null}
 
-      {tab === "faqs" ? <FaqManager rows={faqRows} /> : null}
+      {faqs ? <FaqManager rows={faqs} /> : null}
 
-      {tab === "usage" ? (
+      {contentList && categories ? (
+        <ContentManager rows={contentList.rows} total={contentList.total} categories={categories} />
+      ) : null}
+
+      {merchList && categories ? (
+        <MerchManager rows={merchList.rows} total={merchList.total} categories={categories} />
+      ) : null}
+
+      {eventList && categories ? (
+        <EventManager rows={eventList.rows} total={eventList.total} categories={categories} />
+      ) : null}
+
+      {usage ? (
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Most bookmarked</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {topBookmarked.length === 0 ? (
+              {usage.topBookmarked.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No bookmarks yet.</p>
               ) : (
-                topBookmarked.map((row, index) =>
-                  row.content_id ? (
-                    <div key={row.content_id} className="flex items-center justify-between gap-3 text-sm">
-                      <Link href={`/content/${row.content_id}`} className="truncate hover:text-primary hover:underline">
-                        {index + 1}. {bookmarkTitleById.get(row.content_id) ?? "Untitled"}
-                      </Link>
-                      <Badge variant="outline">{row._count._all}</Badge>
-                    </div>
-                  ) : null,
-                )
+                usage.topBookmarked.map((row, index) => (
+                  <div key={row.content_id} className="flex items-center justify-between gap-3 text-sm">
+                    <Link
+                      href={`/content/${row.content_id}`}
+                      className="truncate hover:text-primary hover:underline"
+                    >
+                      {index + 1}. {usage.bookmarkTitles.get(row.content_id) ?? "Untitled"}
+                    </Link>
+                    <Badge variant="outline">{row.count}</Badge>
+                  </div>
+                ))
               )}
             </CardContent>
           </Card>
@@ -206,21 +178,20 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <CardTitle>Top rated (stars)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {topRated.length === 0 ? (
+              {usage.topRated.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No ratings yet.</p>
               ) : (
-                topRated.map((row, index) =>
-                  row.content_id ? (
-                    <div key={row.content_id} className="flex items-center justify-between gap-3 text-sm">
-                      <Link href={`/content/${row.content_id}`} className="truncate hover:text-primary hover:underline">
-                        {index + 1}. {ratingTitleById.get(row.content_id) ?? "Untitled"}
-                      </Link>
-                      <Badge variant="outline">
-                        {(row._avg.value ?? 0).toFixed(1)} ★
-                      </Badge>
-                    </div>
-                  ) : null,
-                )
+                usage.topRated.map((row, index) => (
+                  <div key={row.content_id} className="flex items-center justify-between gap-3 text-sm">
+                    <Link
+                      href={`/content/${row.content_id}`}
+                      className="truncate hover:text-primary hover:underline"
+                    >
+                      {index + 1}. {usage.ratingTitles.get(row.content_id) ?? "Untitled"}
+                    </Link>
+                    <Badge variant="outline">{row.average.toFixed(1)} ★</Badge>
+                  </div>
+                ))
               )}
             </CardContent>
           </Card>
@@ -230,13 +201,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <CardTitle>Latest feedback</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {feedback.length === 0 ? (
+              {usage.feedback.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No feedback submitted.</p>
               ) : (
-                feedback.map((item) => (
+                usage.feedback.map((item) => (
                   <div key={item.id} className="rounded-lg bg-muted/60 p-3">
                     <p className="text-xs text-muted-foreground">
-                      {item.user.name} · {item.type.toLowerCase()} · {item.status.toLowerCase()}
+                      {item.author} · {item.type.toLowerCase()} · {item.status.toLowerCase()}
                     </p>
                     <p className="mt-1 text-sm">{item.message}</p>
                   </div>
@@ -250,14 +221,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <CardTitle>Recent chat queries</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {recentQueries.length === 0 ? (
+              {usage.recentQueries.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nobody has asked anything yet.</p>
               ) : (
-                recentQueries.map((item) => (
+                usage.recentQueries.map((item) => (
                   <div key={item.id} className="rounded-lg bg-muted/60 p-3">
                     <p className="text-sm">{item.message}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {item.user?.name ?? "Guest"} · {item.created_at.toLocaleString()}
+                      {item.author} · {item.createdAt}
                     </p>
                   </div>
                 ))
@@ -268,6 +239,221 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       ) : null}
     </div>
   );
+}
+
+function isCatalogueTab(tab: Tab): boolean {
+  return tab === "content" || tab === "merch" || tab === "events";
+}
+
+// ------------------------------------------------------------------- loaders
+async function loadOverview() {
+  const [users, contents, merch, events, pending, ruleCount, bookmarks, ratings] =
+    await prisma.$transaction([
+      prisma.user.count({ where: { role: "USER" } }),
+      prisma.content.count(),
+      prisma.merchandiseItem.count(),
+      prisma.event.count(),
+      prisma.fanSubmission.count({ where: { status: "PENDING" } }),
+      prisma.chatbotFAQ.count(),
+      prisma.bookmark.count(),
+      prisma.rating.count(),
+    ]);
+  return { users, contents, merch, events, pending, ruleCount, bookmarks, ratings };
+}
+
+async function loadSubmissions(): Promise<SubmissionRow[]> {
+  const submissions = await prisma.fanSubmission.findMany({
+    orderBy: { created_at: "desc" },
+    take: 30,
+    include: { user: { select: { name: true, email: true } }, category: { select: { name: true } } },
+  });
+
+  return submissions.map((submission) => ({
+    id: submission.id,
+    title: submission.title,
+    body: submission.body,
+    status: submission.status,
+    createdAt: submission.created_at.toISOString(),
+    author: submission.user.name,
+    authorEmail: submission.user.email,
+    category: submission.category?.name ?? null,
+  }));
+}
+
+async function loadFaqs(): Promise<FaqRow[]> {
+  const faqs = await prisma.chatbotFAQ.findMany({ orderBy: { created_at: "asc" } });
+  return faqs.map((faq) => ({
+    id: faq.id,
+    question: faq.question,
+    answer: faq.answer,
+    keywords: faq.keywords,
+  }));
+}
+
+async function loadCategories(): Promise<CategoryOption[]> {
+  const categories = await prisma.category.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  return categories;
+}
+
+async function loadContentList(): Promise<{ rows: ContentRow[]; total: number }> {
+  const [rows, total] = await Promise.all([
+    prisma.content.findMany({
+      orderBy: [{ popularity_score: "desc" }, { title: "asc" }],
+      take: LIST_LIMIT,
+      include: {
+        category: { select: { name: true } },
+        _count: { select: { bookmarks: true, ratings: true } },
+      },
+    }),
+    prisma.content.count(),
+  ]);
+
+  return {
+    total,
+    rows: rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      type: row.type,
+      genre: row.genre,
+      description: row.description,
+      release_date: row.release_date,
+      media_url: row.media_url,
+      trailer_url: row.trailer_url,
+      popularity_score: row.popularity_score,
+      category_id: row.category_id,
+      category_name: row.category.name,
+      bookmarks: row._count.bookmarks,
+      ratings: row._count.ratings,
+    })),
+  };
+}
+
+async function loadMerchList(): Promise<{ rows: MerchRow[]; total: number }> {
+  const [rows, total] = await Promise.all([
+    prisma.merchandiseItem.findMany({
+      orderBy: [{ is_upcoming: "desc" }, { created_at: "desc" }],
+      take: LIST_LIMIT,
+      include: { category: { select: { name: true } }, _count: { select: { bookmarks: true } } },
+    }),
+    prisma.merchandiseItem.count(),
+  ]);
+
+  return {
+    total,
+    rows: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      image_url: row.image_url,
+      tag: row.tag,
+      is_upcoming: row.is_upcoming,
+      view_count: row.view_count,
+      // Prisma Decimal -> a plain string the price input can hold.
+      price: row.price === null ? null : row.price.toString(),
+      category_id: row.category_id,
+      category_name: row.category.name,
+      bookmarks: row._count.bookmarks,
+    })),
+  };
+}
+
+async function loadEventList(): Promise<{ rows: EventRow[]; total: number }> {
+  const [rows, total] = await Promise.all([
+    prisma.event.findMany({
+      orderBy: { date: "asc" },
+      take: LIST_LIMIT,
+      include: { category: { select: { name: true } } },
+    }),
+    prisma.event.count(),
+  ]);
+
+  return {
+    total,
+    rows: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      city: row.city,
+      date: row.date,
+      ticket_link: row.ticket_link,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      category_id: row.category_id,
+      category_name: row.category?.name ?? null,
+    })),
+  };
+}
+
+async function loadUsage() {
+  const [topBookmarked, topRated, feedback, recentQueries] = await Promise.all([
+    prisma.bookmark.groupBy({
+      by: ["content_id"],
+      _count: { _all: true },
+      orderBy: { _count: { content_id: "desc" } },
+      take: 5,
+      where: { content_id: { not: null } },
+    }),
+    prisma.rating.groupBy({
+      by: ["content_id"],
+      _avg: { value: true },
+      orderBy: { _count: { content_id: "desc" } },
+      take: 5,
+      where: { ratingType: "STARS" },
+    }),
+    prisma.feedback.findMany({
+      orderBy: { created_at: "desc" },
+      take: 5,
+      include: { user: { select: { name: true } } },
+    }),
+    prisma.chatbotQuery.findMany({
+      orderBy: { created_at: "desc" },
+      take: 6,
+      include: { user: { select: { name: true } } },
+    }),
+  ]);
+
+  // groupBy returns content_id as string | null; both lists are filtered to
+  // non-null above, so the cast matches the query that produced it.
+  const bookmarkIds = topBookmarked.map((row) => row.content_id as string);
+  const ratingIds = topRated.map((row) => row.content_id as string);
+
+  const [bookmarkItems, ratingItems] = await Promise.all([
+    prisma.content.findMany({
+      where: { id: { in: bookmarkIds } },
+      select: { id: true, title: true },
+    }),
+    prisma.content.findMany({
+      where: { id: { in: ratingIds } },
+      select: { id: true, title: true },
+    }),
+  ]);
+
+  return {
+    topBookmarked: topBookmarked.map((row) => ({
+      content_id: row.content_id as string,
+      count: row._count._all,
+    })),
+    topRated: topRated.map((row) => ({
+      content_id: row.content_id as string,
+      average: row._avg.value ?? 0,
+    })),
+    bookmarkTitles: new Map(bookmarkItems.map((item) => [item.id, item.title])),
+    ratingTitles: new Map(ratingItems.map((item) => [item.id, item.title])),
+    feedback: feedback.map((item) => ({
+      id: item.id,
+      message: item.message,
+      type: item.type,
+      status: item.status,
+      author: item.user.name,
+    })),
+    recentQueries: recentQueries.map((item) => ({
+      id: item.id,
+      message: item.message,
+      author: item.user?.name ?? "Guest",
+      createdAt: item.created_at.toLocaleString(),
+    })),
+  };
 }
 
 function StatCard({
