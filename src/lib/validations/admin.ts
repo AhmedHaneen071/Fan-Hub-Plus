@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { CONTENT_TYPES } from "@/lib/constants";
+import { parseEventTimeline } from "@/lib/safe-html";
 import { extractYouTubeId } from "@/lib/youtube";
 
 export const MERCH_TAGS = ["LIMITED_EDITION", "PRE_ORDER", "COLLECTIBLE"] as const;
@@ -192,6 +193,64 @@ export const characterSchema = z.object({
 });
 
 export type CharacterInput = z.infer<typeof characterSchema>;
+
+// -------------------------------------------------------------------- article
+// The body is stored as HTML and rendered on a public page, so it is capped
+// generously but not unbounded. The stored text is *not* sanitized here: the
+// sanitizer in lib/safe-html.ts runs at render time, which is the only place a
+// guarantee about the output actually matters.
+export const articleSchema = z.object({
+  id: z.string().trim().max(60).optional(),
+  categoryId,
+  title: z.string().trim().min(4, "Title is required.").max(140),
+  richTextBody: z
+    .string()
+    .trim()
+    .min(20, "Write at least a paragraph so the article has something to show.")
+    .max(20000, "That body is too long — 20000 characters is the ceiling."),
+  coverImage: optionalUrl,
+  // The timeline is edited as one "Date | Label | Body" row per line and
+  // serialized here, because a JSON blob in a textarea is not editable.
+  timeline: z
+    .string()
+    .trim()
+    .max(4000)
+    .refine(
+      (value) =>
+        value
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .every((line) => line.split("|").length >= 1 && line.split("|").length <= 3),
+      { message: "Each timeline line is Date | Label | Body, with at most three parts." }
+    ),
+});
+
+export type ArticleInput = z.infer<typeof articleSchema>;
+
+/**
+ * "2015 | The Breakout | First anime tops the charts." -> the JSON the row
+ * stores. Blank lines are skipped, and a line may carry only a date.
+ */
+export function timelineToJson(value: string): string {
+  const entries = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [date = "", label = "", body = ""] = line.split("|").map((part) => part.trim());
+      return { date, label, body };
+    });
+  return JSON.stringify(entries);
+}
+
+/** The inverse, for filling the textarea on an edit. */
+export function timelineToText(value: string | null | undefined): string {
+  return parseEventTimeline(value)
+    .map((entry) => [entry.date, entry.label, entry.body].filter(Boolean).join(" | "))
+    .join("\n");
+}
+
 
 // ------------------------------------------------------------------ helpers
 // Exported so the admin action and the client forms agree on what "cleared"

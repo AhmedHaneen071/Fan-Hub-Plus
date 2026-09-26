@@ -15,6 +15,7 @@ const categoryLinks = [
 const resourceLinks = [
   { label: "Content Explorer", href: "/explore" },
   { label: "Characters", href: "/characters" },
+  { label: "Articles", href: "/articles" },
   { label: "Merchandise", href: "/merch" },
   { label: "Events", href: "/events" },
   { label: "Chat with the hub", href: "/chatbot" },

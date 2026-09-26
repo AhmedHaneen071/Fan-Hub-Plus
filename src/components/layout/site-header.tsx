@@ -13,6 +13,7 @@ import { UserMenu } from "./user-menu";
 const NAV_LINKS = [
   { label: "Explore", href: "/explore" },
   { label: "Characters", href: "/characters" },
+  { label: "Articles", href: "/articles" },
   { label: "Merch", href: "/merch" },
   { label: "Events", href: "/events" },
   { label: "Ask the hub", href: "/chatbot" },

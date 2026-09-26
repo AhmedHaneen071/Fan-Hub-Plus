@@ -12,6 +12,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  articleSchema,
   categorySchema,
   characterSchema,
   contentSchema,
@@ -21,6 +22,7 @@ import {
   combineEventDate,
   parseDateOrNull,
   parseNumberOrNull,
+  timelineToJson,
 } from "@/lib/validations/admin";
 
 export type AdminResult =
@@ -536,3 +538,75 @@ export async function deleteCharacter(id: string): Promise<AdminResult> {
   revalidateCharacters(id);
   return { ok: true, message: `"${existing.name}" removed${detail}.` };
 }
+
+// --------------------------------------------------------------------- article
+/** The /articles index, its detail pages and the fandom shelves. */
+function revalidateArticles(articleId?: string) {
+  revalidatePath("/articles");
+  revalidatePath("/");
+  revalidatePath("/admin");
+  if (articleId) revalidatePath(`/articles/${articleId}`);
+}
+
+export async function saveArticle(input: unknown): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = articleSchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
+
+  const { id, categoryId: category, title, richTextBody } = parsed.data;
+
+  if (!(await categoryExists(category))) {
+    return { ok: false, error: "Pick a fandom from the list." };
+  }
+
+  const data = {
+    category_id: category,
+    title,
+    // Stored as typed. It is sanitized at render time in lib/safe-html.ts,
+    // which is the only place the guarantee is worth anything.
+    rich_text_body: richTextBody,
+    cover_image: blankToNull(parsed.data.coverImage),
+    event_timeline: timelineToJson(parsed.data.timeline),
+  };
+
+  try {
+    if (id) {
+      const existing = await prisma.featuredArticle.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) return { ok: false, error: "That article no longer exists." };
+      await prisma.featuredArticle.update({ where: { id }, data });
+    } else {
+      await prisma.featuredArticle.create({ data });
+    }
+  } catch {
+    return { ok: false, error: "That article could not be saved. Please try again." };
+  }
+
+  revalidateArticles(id);
+  return { ok: true, message: id ? "Article updated." : "Article published." };
+}
+
+export async function deleteArticle(id: string): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const existing = await prisma.featuredArticle.findUnique({
+    where: { id },
+    select: { id: true, title: true },
+  });
+  if (!existing) return { ok: false, error: "That article no longer exists." };
+
+  try {
+    await prisma.featuredArticle.delete({ where: { id } });
+  } catch {
+    return { ok: false, error: "That article could not be removed." };
+  }
+
+  revalidateArticles(id);
+  return { ok: true, message: `"${existing.title}" removed.` };
+}
+

@@ -26,7 +26,9 @@ import { MerchManager, type MerchRow } from "@/components/admin/merch-manager";
 import { EventManager, type EventRow } from "@/components/admin/event-manager";
 import { CharacterManager, type CharacterRow } from "@/components/admin/character-manager";
 import { CategoryManager, type CategoryRow } from "@/components/admin/category-manager";
+import { ArticleManager, type ArticleRow } from "@/components/admin/article-manager";
 import type { CategoryOption } from "@/components/admin/manager-parts";
+import { parseEventTimeline } from "@/lib/safe-html";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -41,6 +43,7 @@ const TABS = [
   { value: "merch", label: "Merch" },
   { value: "events", label: "Events" },
   { value: "characters", label: "Characters" },
+  { value: "articles", label: "Articles" },
   { value: "fandoms", label: "Fandoms" },
   { value: "usage", label: "Usage" },
 ] as const;
@@ -80,6 +83,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     merchList,
     eventList,
     characterList,
+    articleList,
     categoryList,
     usage,
     categories,
@@ -91,6 +95,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     tab === "merch" ? loadMerchList() : null,
     tab === "events" ? loadEventList() : null,
     tab === "characters" ? loadCharacterList() : null,
+    tab === "articles" ? loadArticleList() : null,
     tab === "fandoms" ? loadCategoryList() : null,
     tab === "usage" ? loadUsage() : null,
     needsCategories(tab) ? loadCategories() : null,
@@ -175,6 +180,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       {categoryList ? (
         <CategoryManager rows={categoryList.rows} total={categoryList.total} />
+      ) : null}
+
+      {articleList && categories ? (
+        <ArticleManager
+          rows={articleList.rows}
+          total={articleList.total}
+          categories={categories}
+        />
       ) : null}
 
       {usage ? (
@@ -272,7 +285,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
 /** Tabs whose form writes a category foreign key, so they need the picker data. */
 function needsCategories(tab: Tab): boolean {
-  return tab === "content" || tab === "merch" || tab === "events" || tab === "characters";
+  return (
+    tab === "content" ||
+    tab === "merch" ||
+    tab === "events" ||
+    tab === "characters" ||
+    tab === "articles"
+  );
 }
 
 
@@ -440,8 +459,32 @@ async function loadCharacterList(): Promise<{ rows: CharacterRow[]; total: numbe
   };
 }
 
-async function loadCategoryList(): Promise<{ rows: CategoryRow[]; total: number }> {
+async function loadArticleList(): Promise<{ rows: ArticleRow[]; total: number }> {
   const [rows, total] = await Promise.all([
+    prisma.featuredArticle.findMany({
+      orderBy: [{ category: { name: "asc" } }, { title: "asc" }],
+      take: LIST_LIMIT,
+      include: { category: { select: { name: true } } },
+    }),
+    prisma.featuredArticle.count(),
+  ]);
+
+  return {
+    total,
+    rows: rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      cover_image: row.cover_image,
+      category_id: row.category_id,
+      category_name: row.category.name,
+      rich_text_body: row.rich_text_body,
+      event_timeline: row.event_timeline,
+      timelineCount: parseEventTimeline(row.event_timeline).length,
+    })),
+  };
+}
+
+async function loadCategoryList(): Promise<{ rows: CategoryRow[]; total: number }> {  const [rows, total] = await Promise.all([
     prisma.category.findMany({
       orderBy: { name: "asc" },
       include: {
