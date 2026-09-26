@@ -11,16 +11,50 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  contentSchema,
+  eventSchema,
+  merchSchema,
+  blankToNull,
+  combineEventDate,
+  parseDateOrNull,
+  parseNumberOrNull,
+} from "@/lib/validations/admin";
 
 export type AdminResult =
   | { ok: true; message: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
 async function requireAdmin(): Promise<string | null> {
   const session = await auth();
   if (!session?.user?.id) return "Please sign in.";
   if (session.user.role !== "ADMIN") return "Admins only.";
   return null;
+}
+
+/** Turns a Zod failure into the error shape the manager forms expect. */
+function invalid(error: z.ZodError, fallback: string): AdminResult {
+  return {
+    ok: false,
+    error: error.issues[0]?.message ?? fallback,
+    fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
+  };
+}
+
+/**
+ * The catalogue rows appear on the home page, the explorer lanes, the fandom
+ * shelves and the detail pages, so a write here invalidates all of them.
+ * `revalidatePath()` takes a route path, not a URL with a query string, so
+ * "/explore?type=VIDEO" would silently do nothing — hence the plain paths.
+ */
+function revalidateCatalogue(detail?: { contentId?: string; merchId?: string }) {
+  revalidatePath("/");
+  revalidatePath("/explore");
+  revalidatePath("/merch");
+  revalidatePath("/events");
+  revalidatePath("/admin");
+  if (detail?.contentId) revalidatePath(`/content/${detail.contentId}`);
+  if (detail?.merchId) revalidatePath(`/merch/${detail.merchId}`);
 }
 
 // ------------------------------------------------------- submission review
@@ -51,6 +85,26 @@ export async function reviewSubmission(
     ok: true,
     message: parsed.data === "APPROVED" ? "Submission approved." : "Submission rejected.",
   };
+}
+
+export async function deleteSubmission(submissionId: string): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const existing = await prisma.fanSubmission.findUnique({
+    where: { id: submissionId },
+    select: { id: true },
+  });
+  if (!existing) return { ok: false, error: "Submission not found." };
+
+  try {
+    await prisma.fanSubmission.delete({ where: { id: submissionId } });
+  } catch {
+    return { ok: false, error: "That submission could not be removed." };
+  }
+
+  revalidatePath("/admin");
+  return { ok: true, message: "Submission deleted." };
 }
 
 // ------------------------------------------------------------ FAQ manager
@@ -123,4 +177,238 @@ export async function deleteFaq(id: string): Promise<AdminResult> {
 
   revalidatePath("/admin");
   return { ok: true, message: "Rule removed." };
+}
+
+// ===========================================================================
+// Catalogue CRUD
+//
+// Until now the catalogue was frozen: the seed script created the rows and
+// nothing could add, change or remove one afterwards. These actions give an
+// ADMIN the missing management surface. Every one of them re-checks the role
+// server-side, because a server action is a public HTTP endpoint.
+// ===========================================================================
+
+/** Confirms the category actually exists before it is written as a FK. */
+async function categoryExists(categoryId: string): Promise<boolean> {
+  const found = await prisma.category.findUnique({
+    where: { id: categoryId },
+    select: { id: true },
+  });
+  return found !== null;
+}
+
+// ------------------------------------------------------------------- content
+export async function saveContent(input: unknown): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = contentSchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
+
+  const { id, categoryId: category, title, type, genre, description } = parsed.data;
+
+  if (!(await categoryExists(category))) {
+    return { ok: false, error: "Pick a fandom from the list." };
+  }
+
+  const data = {
+    category_id: category,
+    title,
+    type,
+    genre: blankToNull(genre),
+    description,
+    release_date: parseDateOrNull(parsed.data.releaseDate),
+    media_url: blankToNull(parsed.data.mediaUrl),
+    trailer_url: blankToNull(parsed.data.trailerUrl),
+    popularity_score: parseNumberOrNull(parsed.data.popularityScore) ?? 0,
+  };
+
+  try {
+    if (id) {
+      const existing = await prisma.content.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) return { ok: false, error: "That title no longer exists." };
+      await prisma.content.update({ where: { id }, data });
+    } else {
+      await prisma.content.create({ data });
+    }
+  } catch {
+    return { ok: false, error: "That title could not be saved. Please try again." };
+  }
+
+  revalidateCatalogue({ contentId: id });
+  return { ok: true, message: id ? "Title updated." : "Title added to the catalogue." };
+}
+
+export async function deleteContent(id: string): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const existing = await prisma.content.findUnique({
+    where: { id },
+    select: { id: true, title: true, _count: { select: { bookmarks: true, ratings: true } } },
+  });
+  if (!existing) return { ok: false, error: "That title no longer exists." };
+
+  // Content owns its engagement rows (the schema cascades), so deleting a
+  // popular title silently discards real fan data. The UI states the counts
+  // before asking for confirmation, and the toast repeats them afterwards
+  // rather than pretending nothing was lost.
+  const lost = existing._count.bookmarks + existing._count.ratings;
+  const detail =
+    lost > 0
+      ? ` along with ${existing._count.bookmarks} bookmark(s) and ${existing._count.ratings} rating(s)`
+      : "";
+
+  try {
+    await prisma.content.delete({ where: { id } });
+  } catch {
+    return { ok: false, error: "That title could not be removed." };
+  }
+
+  revalidateCatalogue({ contentId: id });
+  return { ok: true, message: `"${existing.title}" removed${detail}.` };
+}
+
+// --------------------------------------------------------------- merchandise
+export async function saveMerch(input: unknown): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = merchSchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
+
+  const { id, categoryId: category, name, tag, isUpcoming } = parsed.data;
+
+  if (!(await categoryExists(category))) {
+    return { ok: false, error: "Pick a fandom from the list." };
+  }
+
+  const data = {
+    category_id: category,
+    name,
+    image_url: blankToNull(parsed.data.imageUrl),
+    tag,
+    is_upcoming: isUpcoming,
+    // Display-only price. There is no checkout and none is planned.
+    price: parseNumberOrNull(parsed.data.price),
+  };
+
+  try {
+    if (id) {
+      const existing = await prisma.merchandiseItem.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) return { ok: false, error: "That item no longer exists." };
+      await prisma.merchandiseItem.update({ where: { id }, data });
+    } else {
+      await prisma.merchandiseItem.create({ data });
+    }
+  } catch {
+    return { ok: false, error: "That item could not be saved. Please try again." };
+  }
+
+  revalidateCatalogue({ merchId: id });
+  return { ok: true, message: id ? "Item updated." : "Item added to the shelf." };
+}
+
+export async function deleteMerch(id: string): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const existing = await prisma.merchandiseItem.findUnique({
+    where: { id },
+    select: { id: true, name: true, _count: { select: { bookmarks: true } } },
+  });
+  if (!existing) return { ok: false, error: "That item no longer exists." };
+
+  const detail =
+    existing._count.bookmarks > 0
+      ? ` along with ${existing._count.bookmarks} bookmark(s)`
+      : "";
+
+  try {
+    await prisma.merchandiseItem.delete({ where: { id } });
+  } catch {
+    return { ok: false, error: "That item could not be removed." };
+  }
+
+  revalidateCatalogue({ merchId: id });
+  return { ok: true, message: `"${existing.name}" removed${detail}.` };
+}
+
+// --------------------------------------------------------------------- event
+export async function saveEvent(input: unknown): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const parsed = eventSchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
+
+  const { id, name, city, latitude, longitude, time } = parsed.data;
+  const category = blankToNull(parsed.data.categoryId);
+
+  if (category && !(await categoryExists(category))) {
+    return { ok: false, error: "Pick a fandom from the list." };
+  }
+
+  // Read the row first: the stored time is what an edit with a blank time field
+  // keeps, since formatEventDate() prints the hour on the public events page.
+  let existing: { id: string; date: Date } | null = null;
+  if (id) {
+    existing = await prisma.event.findUnique({
+      where: { id },
+      select: { id: true, date: true },
+    });
+    if (!existing) return { ok: false, error: "That event no longer exists." };
+  }
+
+  const chosen = combineEventDate(parsed.data.date, time, existing?.date);
+  if (!chosen) return { ok: false, error: "Pick a date." };
+
+  const data = {
+    name,
+    city,
+    date: chosen,
+    ticket_link: blankToNull(parsed.data.ticketLink),
+    latitude: Number(latitude),
+    longitude: Number(longitude),
+    category_id: category,
+  };
+
+  try {
+    if (existing) {
+      await prisma.event.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.event.create({ data });
+    }
+  } catch {
+    return { ok: false, error: "That event could not be saved. Please try again." };
+  }
+
+  revalidateCatalogue();
+  return { ok: true, message: id ? "Event updated." : "Event added to the calendar." };
+}
+
+export async function deleteEvent(id: string): Promise<AdminResult> {
+  const guard = await requireAdmin();
+  if (guard) return { ok: false, error: guard };
+
+  const existing = await prisma.event.findUnique({
+    where: { id },
+    select: { id: true, name: true },
+  });
+  if (!existing) return { ok: false, error: "That event no longer exists." };
+
+  try {
+    await prisma.event.delete({ where: { id } });
+  } catch {
+    return { ok: false, error: "That event could not be removed." };
+  }
+
+  revalidateCatalogue();
+  return { ok: true, message: `"${existing.name}" removed from the calendar.` };
 }
