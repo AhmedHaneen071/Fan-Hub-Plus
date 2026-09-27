@@ -66,7 +66,7 @@
   --card-foreground: #881337;
   --popover: #ffffff;
   --popover-foreground: #881337;
-  --primary: #e11d48;
+  --primary: #be123c;
   --primary-foreground: #ffffff;
   --secondary: #fb7185;
   --secondary-foreground: #0f172a;
@@ -78,7 +78,7 @@
   --destructive-foreground: #ffffff;
   --border: #fecdd3;
   --input: #fecdd3;
-  --ring: #e11d48;
+  --ring: #be123c;
   --chart-1: #e11d48;
   --chart-2: #2563eb;
   --chart-3: #f59e0b;
@@ -87,12 +87,12 @@
   --radius: 0.75rem;
   --sidebar: #fff1f2;
   --sidebar-foreground: #881337;
-  --sidebar-primary: #e11d48;
+  --sidebar-primary: #be123c;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #ffe4e6;
   --sidebar-accent-foreground: #881337;
   --sidebar-border: #fecdd3;
-  --sidebar-ring: #e11d48;
+  --sidebar-ring: #be123c;
 }
 
 .dark {
@@ -137,8 +137,19 @@
   html {
     @apply font-sans;
   }
-  body {
+body {
     @apply bg-background text-foreground;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

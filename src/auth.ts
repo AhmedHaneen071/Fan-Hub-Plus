@@ -59,6 +59,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // confirm the address is registered.
         if (user.suspended_until && user.suspended_until > new Date()) return null;
 
+        try {
+          await prisma.user.update({ where: { id: user.id }, data: { last_seen: new Date() } });
+        } catch {
+          return null;
+        }
+
         return {
           id: user.id,
           name: user.name,

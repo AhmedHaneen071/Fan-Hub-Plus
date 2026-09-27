@@ -31,7 +31,7 @@ type SmtpConfig = {
 
 /**
  * Reads SMTP settings from the environment. Returns null when they are not
- * fully configured, which is the signal to fall back to console logging.
+ * fully configured, which means that reset-email delivery is unavailable.
  */
 function readSmtpConfig(): SmtpConfig | null {
   const host = process.env.SMTP_HOST?.trim();
@@ -99,7 +99,7 @@ export async function sendPasswordResetEmail(
     return {
       ok: false,
       error:
-        "Email delivery is not configured on this server, so the reset link could not be sent. Check the server log or contact an administrator.",
+        "Email delivery is not configured on this server, so the reset link could not be sent. Contact an administrator to configure email.",
     };
   }
 

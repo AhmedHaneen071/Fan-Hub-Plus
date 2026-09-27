@@ -5,6 +5,7 @@ import { CATEGORY_LABELS, type CategoryValue } from "@/lib/constants";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { FontSizeToggle } from "@/components/theme/font-size-toggle";
 import { SearchBox } from "./search-box";
 import { BrowseMenu } from "./browse-menu";
 import { MobileNav } from "./mobile-nav";
@@ -68,6 +69,7 @@ export async function SiteHeader() {
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <SearchBox />
           <ThemeToggle />
+          <FontSizeToggle />
           {user ? (
             <UserMenu
               name={user.name ?? "Fan"}

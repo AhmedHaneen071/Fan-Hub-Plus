@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           <ul className="mt-8 space-y-4 text-sm">
             <Feature icon={Compass} text="Discover content by your favourite fandoms" />
             <Feature icon={Star} text="Rate, bookmark and comment in one click" />
-            <Feature icon={CalendarDays} text="Find fandom events happening near you" />
+            <Feature icon={CalendarDays} text="Browse upcoming fandom events by city and date" />
             <Feature icon={Globe2} text="8 categories from anime to cosplay" />
           </ul>
         </div>

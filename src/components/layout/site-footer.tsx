@@ -14,12 +14,14 @@ const categoryLinks = [
 
 const resourceLinks = [
   { label: "Content Explorer", href: "/explore" },
+  { label: "Upcoming releases", href: "/upcoming" },
   { label: "Characters", href: "/characters" },
   { label: "Articles", href: "/articles" },
   { label: "Merchandise", href: "/merch" },
   { label: "Events", href: "/events" },
   { label: "Chat with the hub", href: "/chatbot" },
   { label: "Dashboard", href: "/dashboard" },
+  { label: "Sitemap", href: "/sitemap" },
 ];
 
 /**

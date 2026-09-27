@@ -56,14 +56,19 @@ function safeRedirectPath(
 
 /**
  * Absolute base URL of this deployment, used to build password-reset links.
- * Falls back to the dev server so local testing keeps working when APP_URL is
- * not set, but never silently ships a localhost link to real users: mail.ts
- * warns loudly when the fallback is in use outside development.
+ * Production requires an explicitly configured HTTPS URL; local fallback is
+ * only permitted in development.
  */
-function getAppUrl(): string {
+function getAppUrl(): string | null {
   const configured = process.env.APP_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  return "http://localhost:3000";
+  if (!configured) return process.env.NODE_ENV === "development" ? "http://localhost:3000" : null;
+  try {
+    const url = new URL(configured);
+    if (url.username || url.password || url.search || url.hash) return null;
+    if (process.env.NODE_ENV === "production" && (url.protocol !== "https:" || ["localhost", "127.0.0.1"].includes(url.hostname))) return null;
+    if (url.protocol !== "https:" && !(process.env.NODE_ENV === "development" && url.protocol === "http:")) return null;
+    return url.toString().replace(/\/+$/, "");
+  } catch { return null; }
 }
 
 // ------------------------------------------------------------------ register
@@ -164,6 +169,8 @@ export async function requestPasswordReset(formData: FormData): Promise<AuthActi
     };
   }
 
+  const appUrl = getAppUrl();
+  if (!appUrl) return { ok: true, message: "If that account exists, reset instructions will be available through the configured email service.", redirectTo: "/login" };
   const user = await prisma.user.findUnique({ where: { email } });
 
   // Always return the same friendly message whether or not the email exists.
@@ -192,7 +199,7 @@ export async function requestPasswordReset(formData: FormData): Promise<AuthActi
 
   // Build the link the user would click. In dev this is previewed on-screen;
   // in production it arrives by email.
-  const resetUrl = `${getAppUrl()}/reset-password?token=${rawToken}`;
+  const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
   const mail = await sendPasswordResetEmail(email, resetUrl);
 
   return {

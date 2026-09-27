@@ -49,6 +49,9 @@ prisma/*.db-journal
 prisma/*.db-shm
 prisma/*.db-wal
 
+# user-uploaded profile images (local runtime data)
+/public/uploads/
+
 # vercel
 .vercel
 
