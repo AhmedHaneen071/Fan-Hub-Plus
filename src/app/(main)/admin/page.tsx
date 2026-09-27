@@ -312,7 +312,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <Card className="lg:col-span-2"><CardHeader><CardTitle>Usage overview</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-3">
             <div><p className="text-2xl font-bold">{usage.activeUsers}</p><p className="text-sm text-muted-foreground">Active users · last {usage.activeWindowDays} days</p></div>
             <div><p className="text-2xl font-bold">{usage.chatbotInteractions}</p><p className="text-sm text-muted-foreground">Chatbot interactions · last {usage.activeWindowDays} days</p></div>
-            <div><p className="text-sm font-semibold">Popular categories</p>{usage.popularCategories.length ? usage.popularCategories.map((category) => <p key={category.name} className="text-sm text-muted-foreground">{category.name.replaceAll("_", " ")} · {category.count} items</p>) : <p className="text-sm text-muted-foreground">No catalogue records yet.</p>}</div>
+            <div><p className="text-sm font-semibold">Popular categories · average heat</p>{usage.popularCategories.length ? usage.popularCategories.map((category) => <p key={category.name} className="text-sm text-muted-foreground">{category.name.replaceAll("_", " ")} · {category.averageHeat}/100 across {category.count} titles</p>) : <p className="text-sm text-muted-foreground">No catalogue records yet.</p>}</div>
           </CardContent></Card>
           <Card>
             <CardHeader>
@@ -897,7 +897,7 @@ async function loadUsage() {
     }),
     prisma.user.count({ where: { role: { in: ["USER", "ADMIN"] }, last_seen: { gte: activeSince } } }),
     prisma.chatbotQuery.count({ where: { created_at: { gte: activeSince } } }),
-    prisma.content.groupBy({ by: ["category_id"], _count: { _all: true }, orderBy: { _count: { category_id: "desc" } }, take: 8 }),
+    prisma.content.groupBy({ by: ["category_id"], _avg: { popularity_score: true }, _count: { _all: true }, orderBy: { _avg: { popularity_score: "desc" } }, take: 8 }),
   ]);
 
   // groupBy returns content_id as string | null; both lists are filtered to
@@ -934,7 +934,7 @@ async function loadUsage() {
     activeUsers,
     activeWindowDays: 30,
     chatbotInteractions,
-    popularCategories: popularCategories.map((row) => ({ name: categoryNames.get(row.category_id) ?? "Unknown", count: row._count._all })),
+    popularCategories: popularCategories.map((row) => ({ name: categoryNames.get(row.category_id) ?? "Unknown", count: row._count._all, averageHeat: Math.round(row._avg.popularity_score ?? 0) })),
     recentQueries: recentQueries.map((item) => ({
       id: item.id,
       message: item.message,
