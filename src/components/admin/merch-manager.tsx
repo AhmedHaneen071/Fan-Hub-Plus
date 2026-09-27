@@ -58,6 +58,7 @@ export type MerchRow = {
   name: string;
   image_url: string | null;
   tag: string;
+  tags: string;
   is_upcoming: boolean;
   view_count: number;
   price: string | null;
@@ -71,6 +72,7 @@ const BLANK: MerchInput = {
   name: "",
   imageUrl: "",
   tag: "COLLECTIBLE",
+  tags: "",
   isUpcoming: false,
   price: "",
 };
@@ -114,6 +116,7 @@ export function MerchManager({
       name: row.name,
       imageUrl: row.image_url ?? "",
       tag: row.tag as MerchInput["tag"],
+      tags: row.tags,
       isUpcoming: row.is_upcoming,
       price: toPriceInput(row.price),
     });
@@ -158,6 +161,11 @@ export function MerchManager({
               <Badge variant="outline" className="text-xs">
                 {row.category_name}
               </Badge>
+              {row.tags.split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
+                <Badge key={tag} variant="outline" className="text-xs">
+                  {tag}
+                </Badge>
+              ))}
               {row.is_upcoming && (
                 <Badge variant="outline" className="text-xs">
                   Upcoming
@@ -248,6 +256,21 @@ export function MerchManager({
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name="tags"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Additional tags</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="figure, limited run, pre-order" />
+                    </FormControl>
+                    <FormDescription>Separate discovery tags with commas.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

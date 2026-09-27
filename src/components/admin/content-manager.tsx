@@ -59,6 +59,7 @@ export type ContentRow = {
   id: string;
   title: string;
   type: string;
+  tags: string;
   genre: string | null;
   description: string;
   release_date: Date | null;
@@ -80,6 +81,7 @@ const BLANK: ContentInput = {
   categoryId: "",
   title: "",
   type: "ARTICLE",
+  tags: "",
   genre: "",
   description: "",
   releaseDate: "",
@@ -121,6 +123,7 @@ export function ContentManager({
       categoryId: row.category_id,
       title: row.title,
       type: row.type as ContentInput["type"],
+      tags: row.tags,
       genre: row.genre ?? "",
       description: row.description,
       releaseDate: toDateInput(row.release_date),
@@ -143,7 +146,7 @@ export function ContentManager({
   return (
     <div className="space-y-4">
       <ManagerHeader
-        description="Add, edit or remove anything that appears in the explore lanes and on a fandom shelf."
+        description="Manage articles, images, audio and video shown in the explore lanes and fandom shelves."
         count={rows.length}
         total={total}
         addLabel="Add title"
@@ -169,6 +172,11 @@ export function ContentManager({
               <Badge variant="outline" className="text-xs">
                 {row.category_name}
               </Badge>
+              {row.tags.split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
+                <Badge key={tag} variant="outline" className="text-xs">
+                  {tag}
+                </Badge>
+              ))}
               {row.genre && (
                 <Badge variant="outline" className="text-xs">
                   {row.genre}
@@ -214,6 +222,21 @@ export function ContentManager({
                     <FormControl>
                       <Input {...field} placeholder="e.g. Arcane season 2 breakdown" />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="tags"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tags</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="action, season 1, interview" />
+                    </FormControl>
+                    <FormDescription>Separate discovery tags with commas.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -312,9 +335,9 @@ export function ContentManager({
                 name="mediaUrl"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Image URL</FormLabel>
+                    <FormLabel>Media URL</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="https://…/cover.jpg" />
+                      <Input {...field} placeholder="https://…/media-file-or-image" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

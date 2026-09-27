@@ -33,6 +33,8 @@ export type AdminResult =
   | { ok: true; message: string }
   | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
+const adminIdSchema = z.string().trim().min(1).max(60);
+
 /**
  * The single gate every admin mutation passes through. It checks the suspension
  * as well as the role: hiding the buttons on /admin is a courtesy, and a
@@ -97,15 +99,22 @@ export async function reviewSubmission(
   const parsed = statusSchema.safeParse(status);
   if (!parsed.success) return { ok: false, error: "Invalid status." };
 
-  const submission = await prisma.fanSubmission.findUnique({
-    where: { id: submissionId },
-  });
-  if (!submission) return { ok: false, error: "Submission not found." };
+  const parsedId = adminIdSchema.safeParse(submissionId);
+  if (!parsedId.success) return { ok: false, error: "Submission not found." };
 
-  await prisma.fanSubmission.update({
-    where: { id: submissionId },
-    data: { status: parsed.data, reviewed_at: new Date() },
-  });
+  try {
+    const submission = await prisma.fanSubmission.findUnique({
+      where: { id: parsedId.data },
+    });
+    if (!submission) return { ok: false, error: "Submission not found." };
+
+    await prisma.fanSubmission.update({
+      where: { id: parsedId.data },
+      data: { status: parsed.data, reviewed_at: new Date() },
+    });
+  } catch {
+    return { ok: false, error: "That submission could not be updated." };
+  }
 
   revalidatePath("/admin");
   return {
@@ -118,14 +127,16 @@ export async function deleteSubmission(submissionId: string): Promise<AdminResul
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const existing = await prisma.fanSubmission.findUnique({
-    where: { id: submissionId },
-    select: { id: true },
-  });
-  if (!existing) return { ok: false, error: "Submission not found." };
+  const parsedId = adminIdSchema.safeParse(submissionId);
+  if (!parsedId.success) return { ok: false, error: "Submission not found." };
 
   try {
-    await prisma.fanSubmission.delete({ where: { id: submissionId } });
+    const existing = await prisma.fanSubmission.findUnique({
+      where: { id: parsedId.data },
+      select: { id: true },
+    });
+    if (!existing) return { ok: false, error: "Submission not found." };
+    await prisma.fanSubmission.delete({ where: { id: existing.id } });
   } catch {
     return { ok: false, error: "That submission could not be removed." };
   }
@@ -136,7 +147,8 @@ export async function deleteSubmission(submissionId: string): Promise<AdminResul
 
 // ------------------------------------------------------------ FAQ manager
 const faqSchema = z.object({
-  id: z.string().optional(),
+  id: adminIdSchema.optional(),
+  categoryId: z.string().trim().max(60).optional().transform((value) => value ?? ""),
   question: z.string().trim().min(3, "Ask a real question.").max(200),
   answer: z.string().trim().min(3, "Answer is required.").max(1000),
   keywords: z
@@ -149,6 +161,7 @@ const faqSchema = z.object({
 
 export async function saveFaq(input: {
   id?: string;
+  categoryId?: string;
   question: string;
   answer: string;
   keywords?: string;
@@ -161,6 +174,11 @@ export async function saveFaq(input: {
     return { ok: false, error: parsed.error.flatten().formErrors[0] ?? "Invalid entry." };
   }
   const { id, question, answer, keywords } = parsed.data;
+  const categoryId = blankToNull(parsed.data.categoryId);
+  if (categoryId) {
+    const categoryError = categoryCheckError(await categoryExists(categoryId));
+    if (categoryError) return categoryError;
+  }
 
   try {
     // Branch on the presence of an id. The old code passed a "__new__"
@@ -169,10 +187,10 @@ export async function saveFaq(input: {
     if (id) {
       await prisma.chatbotFAQ.update({
         where: { id },
-        data: { question, answer, keywords },
+        data: { question, answer, keywords, category_id: categoryId },
       });
     } else {
-      await prisma.chatbotFAQ.create({ data: { question, answer, keywords } });
+      await prisma.chatbotFAQ.create({ data: { question, answer, keywords, category_id: categoryId } });
     }
   } catch {
     return { ok: false, error: "That rule could not be saved." };
@@ -189,7 +207,7 @@ export async function deleteFaq(id: string): Promise<AdminResult> {
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const parsedId = z.string().trim().min(1).max(60).safeParse(id);
+  const parsedId = adminIdSchema.safeParse(id);
   if (!parsedId.success) return { ok: false, error: "That rule no longer exists." };
 
   try {
@@ -219,12 +237,41 @@ export async function deleteFaq(id: string): Promise<AdminResult> {
 // ===========================================================================
 
 /** Confirms the category actually exists before it is written as a FK. */
-async function categoryExists(categoryId: string): Promise<boolean> {
-  const found = await prisma.category.findUnique({
-    where: { id: categoryId },
-    select: { id: true },
-  });
-  return found !== null;
+async function categoryExists(categoryId: string): Promise<boolean | null> {
+  try {
+    const found = await prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { id: true },
+    });
+    return found !== null;
+  } catch {
+    return null;
+  }
+}
+
+function categoryCheckError(exists: boolean | null): AdminResult | null {
+  if (exists === true) return null;
+  return {
+    ok: false,
+    error:
+      exists === null
+        ? "Fandoms could not be checked. Please try again."
+        : "Pick a fandom from the list.",
+  };
+}
+
+function normalizeContentTags(value: string): string {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const rawTag of value.split(",")) {
+    const tag = rawTag.trim();
+    const key = tag.toLowerCase();
+    if (tag && !seen.has(key)) {
+      seen.add(key);
+      tags.push(tag);
+    }
+  }
+  return tags.join(", ");
 }
 
 // ------------------------------------------------------------------- content
@@ -235,16 +282,16 @@ export async function saveContent(input: unknown): Promise<AdminResult> {
   const parsed = contentSchema.safeParse(input);
   if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
 
-  const { id, categoryId: category, title, type, genre, description } = parsed.data;
+  const { id, categoryId: category, title, type, tags, genre, description } = parsed.data;
 
-  if (!(await categoryExists(category))) {
-    return { ok: false, error: "Pick a fandom from the list." };
-  }
+  const categoryError = categoryCheckError(await categoryExists(category));
+  if (categoryError) return categoryError;
 
   const data = {
     category_id: category,
     title,
     type,
+    tags: normalizeContentTags(tags),
     genre: blankToNull(genre),
     description,
     release_date: parseDateOrNull(parsed.data.releaseDate),
@@ -276,11 +323,20 @@ export async function deleteContent(id: string): Promise<AdminResult> {
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const existing = await prisma.content.findUnique({
-    where: { id },
-    select: { id: true, title: true, _count: { select: { bookmarks: true, ratings: true } } },
-  });
-  if (!existing) return { ok: false, error: "That title no longer exists." };
+  const parsedId = adminIdSchema.safeParse(id);
+  if (!parsedId.success) return { ok: false, error: "That title no longer exists." };
+
+  let existing: { id: string; title: string; _count: { bookmarks: number; ratings: number } };
+  try {
+    const found = await prisma.content.findUnique({
+      where: { id: parsedId.data },
+      select: { id: true, title: true, _count: { select: { bookmarks: true, ratings: true } } },
+    });
+    if (!found) return { ok: false, error: "That title no longer exists." };
+    existing = found;
+  } catch {
+    return { ok: false, error: "That title could not be loaded. Please try again." };
+  }
 
   // Content owns its engagement rows (the schema cascades), so deleting a
   // popular title silently discards real fan data. The UI states the counts
@@ -293,12 +349,12 @@ export async function deleteContent(id: string): Promise<AdminResult> {
       : "";
 
   try {
-    await prisma.content.delete({ where: { id } });
+    await prisma.content.delete({ where: { id: parsedId.data } });
   } catch {
     return { ok: false, error: "That title could not be removed." };
   }
 
-  revalidateCatalogue({ contentId: id });
+  revalidateCatalogue({ contentId: parsedId.data });
   return { ok: true, message: `"${existing.title}" removed${detail}.` };
 }
 
@@ -310,17 +366,17 @@ export async function saveMerch(input: unknown): Promise<AdminResult> {
   const parsed = merchSchema.safeParse(input);
   if (!parsed.success) return invalid(parsed.error, "Check the highlighted fields.");
 
-  const { id, categoryId: category, name, tag, isUpcoming } = parsed.data;
+  const { id, categoryId: category, name, tag, tags, isUpcoming } = parsed.data;
 
-  if (!(await categoryExists(category))) {
-    return { ok: false, error: "Pick a fandom from the list." };
-  }
+  const categoryError = categoryCheckError(await categoryExists(category));
+  if (categoryError) return categoryError;
 
   const data = {
     category_id: category,
     name,
     image_url: blankToNull(parsed.data.imageUrl),
     tag,
+    tags: normalizeContentTags(tags),
     is_upcoming: isUpcoming,
     // Display-only price. There is no checkout and none is planned.
     price: parseNumberOrNull(parsed.data.price),
@@ -349,11 +405,20 @@ export async function deleteMerch(id: string): Promise<AdminResult> {
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const existing = await prisma.merchandiseItem.findUnique({
-    where: { id },
-    select: { id: true, name: true, _count: { select: { bookmarks: true } } },
-  });
-  if (!existing) return { ok: false, error: "That item no longer exists." };
+  const parsedId = adminIdSchema.safeParse(id);
+  if (!parsedId.success) return { ok: false, error: "That item no longer exists." };
+
+  let existing: { id: string; name: string; _count: { bookmarks: number } };
+  try {
+    const found = await prisma.merchandiseItem.findUnique({
+      where: { id: parsedId.data },
+      select: { id: true, name: true, _count: { select: { bookmarks: true } } },
+    });
+    if (!found) return { ok: false, error: "That item no longer exists." };
+    existing = found;
+  } catch {
+    return { ok: false, error: "That item could not be loaded. Please try again." };
+  }
 
   const detail =
     existing._count.bookmarks > 0
@@ -361,12 +426,12 @@ export async function deleteMerch(id: string): Promise<AdminResult> {
       : "";
 
   try {
-    await prisma.merchandiseItem.delete({ where: { id } });
+    await prisma.merchandiseItem.delete({ where: { id: parsedId.data } });
   } catch {
     return { ok: false, error: "That item could not be removed." };
   }
 
-  revalidateCatalogue({ merchId: id });
+  revalidateCatalogue({ merchId: parsedId.data });
   return { ok: true, message: `"${existing.name}" removed${detail}.` };
 }
 
@@ -381,8 +446,9 @@ export async function saveEvent(input: unknown): Promise<AdminResult> {
   const { id, name, city, latitude, longitude, time } = parsed.data;
   const category = blankToNull(parsed.data.categoryId);
 
-  if (category && !(await categoryExists(category))) {
-    return { ok: false, error: "Pick a fandom from the list." };
+  if (category) {
+    const categoryError = categoryCheckError(await categoryExists(category));
+    if (categoryError) return categoryError;
   }
 
   // Read the row first: the stored time is what an edit with a blank time field
@@ -427,14 +493,20 @@ export async function deleteEvent(id: string): Promise<AdminResult> {
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const existing = await prisma.event.findUnique({
-    where: { id },
-    select: { id: true, name: true },
-  });
-  if (!existing) return { ok: false, error: "That event no longer exists." };
+  const parsedId = adminIdSchema.safeParse(id);
+  if (!parsedId.success) return { ok: false, error: "That event no longer exists." };
+
+  let existing: { id: string; name: string };
+  try {
+    const found = await prisma.event.findUnique({ where: { id: parsedId.data }, select: { id: true, name: true } });
+    if (!found) return { ok: false, error: "That event no longer exists." };
+    existing = found;
+  } catch {
+    return { ok: false, error: "That event could not be loaded. Please try again." };
+  }
 
   try {
-    await prisma.event.delete({ where: { id } });
+    await prisma.event.delete({ where: { id: parsedId.data } });
   } catch {
     return { ok: false, error: "That event could not be removed." };
   }
@@ -466,13 +538,16 @@ export async function saveCategory(input: unknown): Promise<AdminResult> {
 
   const { id, description, featured } = parsed.data;
 
-  const existing = await prisma.category.findUnique({
-    where: { id },
-    select: { id: true, name: true },
-  });
-  if (!existing) return { ok: false, error: "That fandom no longer exists." };
+  let existing: { id: string; name: string };
 
   try {
+    const found = await prisma.category.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+    if (!found) return { ok: false, error: "That fandom no longer exists." };
+    existing = found;
+
     await prisma.category.update({
       where: { id },
       data: {
@@ -500,9 +575,8 @@ export async function saveCharacter(input: unknown): Promise<AdminResult> {
 
   const { id, categoryId: category, name, bio } = parsed.data;
 
-  if (!(await categoryExists(category))) {
-    return { ok: false, error: "Pick a fandom from the list." };
-  }
+  const categoryError = categoryCheckError(await categoryExists(category));
+  if (categoryError) return categoryError;
 
   const data = {
     category_id: category,
@@ -534,11 +608,20 @@ export async function deleteCharacter(id: string): Promise<AdminResult> {
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const existing = await prisma.characterProfile.findUnique({
-    where: { id },
-    select: { id: true, name: true, _count: { select: { bookmarks: true } } },
-  });
-  if (!existing) return { ok: false, error: "That character no longer exists." };
+  const parsedId = adminIdSchema.safeParse(id);
+  if (!parsedId.success) return { ok: false, error: "That character no longer exists." };
+
+  let existing: { id: string; name: string; _count: { bookmarks: number } };
+  try {
+    const found = await prisma.characterProfile.findUnique({
+      where: { id: parsedId.data },
+      select: { id: true, name: true, _count: { select: { bookmarks: true } } },
+    });
+    if (!found) return { ok: false, error: "That character no longer exists." };
+    existing = found;
+  } catch {
+    return { ok: false, error: "That character could not be loaded. Please try again." };
+  }
 
   // Bookmark_character_id_fkey is ON DELETE CASCADE, so the bookmarks go too.
   const detail =
@@ -547,12 +630,12 @@ export async function deleteCharacter(id: string): Promise<AdminResult> {
       : "";
 
   try {
-    await prisma.characterProfile.delete({ where: { id } });
+    await prisma.characterProfile.delete({ where: { id: parsedId.data } });
   } catch {
     return { ok: false, error: "That character could not be removed." };
   }
 
-  revalidateCharacters(id);
+  revalidateCharacters(parsedId.data);
   return { ok: true, message: `"${existing.name}" removed${detail}.` };
 }
 
@@ -574,9 +657,8 @@ export async function saveArticle(input: unknown): Promise<AdminResult> {
 
   const { id, categoryId: category, title, richTextBody } = parsed.data;
 
-  if (!(await categoryExists(category))) {
-    return { ok: false, error: "Pick a fandom from the list." };
-  }
+  const categoryError = categoryCheckError(await categoryExists(category));
+  if (categoryError) return categoryError;
 
   const data = {
     category_id: category,
@@ -611,19 +693,25 @@ export async function deleteArticle(id: string): Promise<AdminResult> {
   const guard = await requireAdmin();
   if (guard) return { ok: false, error: guard };
 
-  const existing = await prisma.featuredArticle.findUnique({
-    where: { id },
-    select: { id: true, title: true },
-  });
-  if (!existing) return { ok: false, error: "That article no longer exists." };
+  const parsedId = adminIdSchema.safeParse(id);
+  if (!parsedId.success) return { ok: false, error: "That article no longer exists." };
+
+  let existing: { id: string; title: string };
+  try {
+    const found = await prisma.featuredArticle.findUnique({ where: { id: parsedId.data }, select: { id: true, title: true } });
+    if (!found) return { ok: false, error: "That article no longer exists." };
+    existing = found;
+  } catch {
+    return { ok: false, error: "That article could not be loaded. Please try again." };
+  }
 
   try {
-    await prisma.featuredArticle.delete({ where: { id } });
+    await prisma.featuredArticle.delete({ where: { id: parsedId.data } });
   } catch {
     return { ok: false, error: "That article could not be removed." };
   }
 
-  revalidateArticles(id);
+  revalidateArticles(parsedId.data);
   return { ok: true, message: `"${existing.title}" removed.` };
 }
 
@@ -818,4 +906,3 @@ export async function deleteFeedback(id: string): Promise<AdminResult> {
   revalidatePath("/dashboard");
   return { ok: true, message: "Message deleted." };
 }
-

@@ -34,15 +34,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { deleteFaq, saveFaq } from "@/lib/admin-actions";
+import { FandomSelect, type CategoryOption } from "@/components/admin/manager-parts";
 
 export type FaqRow = {
   id: string;
+  category_id: string | null;
+  category_name: string | null;
   question: string;
   answer: string;
   keywords: string;
 };
 
 const faqFormSchema = z.object({
+  categoryId: z.string().trim().max(60),
   question: z.string().trim().min(3, "Ask a real question.").max(200),
   answer: z.string().trim().min(3, "Answer is required.").max(1000),
   keywords: z
@@ -53,7 +57,7 @@ const faqFormSchema = z.object({
     .or(z.literal("")),
 });
 
-export function FaqManager({ rows }: { rows: FaqRow[] }) {
+export function FaqManager({ rows, categories }: { rows: FaqRow[]; categories: CategoryOption[] }) {
   const router = useRouter();
   const [editing, setEditing] = useState<FaqRow | null>(null);
   const [open, setOpen] = useState(false);
@@ -62,18 +66,18 @@ export function FaqManager({ rows }: { rows: FaqRow[] }) {
 
   const form = useForm({
     resolver: zodResolver(faqFormSchema),
-    defaultValues: { question: "", answer: "", keywords: "" },
+    defaultValues: { categoryId: "", question: "", answer: "", keywords: "" },
   });
 
   function openCreate() {
     setEditing(null);
-    form.reset({ question: "", answer: "", keywords: "" });
+    form.reset({ categoryId: "", question: "", answer: "", keywords: "" });
     setOpen(true);
   }
 
   function openEdit(row: FaqRow) {
     setEditing(row);
-    form.reset({ question: row.question, answer: row.answer, keywords: row.keywords });
+    form.reset({ categoryId: row.category_id ?? "", question: row.question, answer: row.answer, keywords: row.keywords });
     setOpen(true);
   }
 
@@ -81,6 +85,7 @@ export function FaqManager({ rows }: { rows: FaqRow[] }) {
     setPending(true);
     const result = await saveFaq({
       id: editing?.id,
+      categoryId: values.categoryId,
       question: values.question,
       answer: values.answer,
       keywords: values.keywords,
@@ -123,6 +128,7 @@ export function FaqManager({ rows }: { rows: FaqRow[] }) {
               <div className="min-w-0 space-y-1">
                 <p className="font-medium">{row.question}</p>
                 <p className="text-sm text-muted-foreground">{row.answer}</p>
+                {row.category_name && <Badge variant="secondary" className="text-xs">{row.category_name}</Badge>}
                 <div className="flex flex-wrap gap-1 pt-1">
                   {row.keywords
                     .split(",")
@@ -170,6 +176,13 @@ export function FaqManager({ rows }: { rows: FaqRow[] }) {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FandomSelect
+                form={form}
+                name="categoryId"
+                categories={categories}
+                label="Fandom (optional)"
+                required={false}
+              />
               <FormField
                 control={form.control}
                 name="question"

@@ -196,7 +196,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       {submissions ? <SubmissionsManager rows={submissions} /> : null}
 
-      {faqs ? <FaqManager rows={faqs} /> : null}
+      {faqs && categories ? <FaqManager rows={faqs} categories={categories} /> : null}
 
       {contentList && categories ? (
         <>
@@ -400,6 +400,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 function needsCategories(tab: Tab): boolean {
   return (
     tab === "content" ||
+    tab === "faqs" ||
     tab === "merch" ||
     tab === "events" ||
     tab === "characters" ||
@@ -444,9 +445,14 @@ async function loadSubmissions(): Promise<SubmissionRow[]> {
 }
 
 async function loadFaqs(): Promise<FaqRow[]> {
-  const faqs = await prisma.chatbotFAQ.findMany({ orderBy: { created_at: "asc" } });
+  const faqs = await prisma.chatbotFAQ.findMany({
+    orderBy: { created_at: "asc" },
+    include: { category: { select: { id: true, name: true } } },
+  });
   return faqs.map((faq) => ({
     id: faq.id,
+    category_id: faq.category?.id ?? null,
+    category_name: faq.category?.name ?? null,
     question: faq.question,
     answer: faq.answer,
     keywords: faq.keywords,
@@ -486,6 +492,7 @@ async function loadContentList(list: ListParams): Promise<{ rows: ContentRow[]; 
         OR: [
           { title: { contains: list.term } },
           { description: { contains: list.term } },
+          { tags: { contains: list.term } },
         ],
       }
     : {};
@@ -515,6 +522,7 @@ async function loadContentList(list: ListParams): Promise<{ rows: ContentRow[]; 
       id: row.id,
       title: row.title,
       type: row.type,
+      tags: row.tags,
       genre: row.genre,
       description: row.description,
       release_date: row.release_date,
@@ -530,11 +538,10 @@ async function loadContentList(list: ListParams): Promise<{ rows: ContentRow[]; 
 }
 
 async function loadMerchList(list: ListParams): Promise<{ rows: MerchRow[]; total: number }> {
-  // MerchandiseItem.tag is a Prisma enum (LIMITED_EDITION, PRE_ORDER,
-  // COLLECTIBLE), so like Content.type it is not a `contains` target. The name
-  // is the field worth searching.
+  // The primary merchandise tag is a Prisma enum; free-form discovery tags
+  // are searchable alongside the item name.
   const where: Prisma.MerchandiseItemWhereInput = list.term
-    ? { name: { contains: list.term } }
+    ? { OR: [{ name: { contains: list.term } }, { tags: { contains: list.term } }] }
     : {};
 
   const fetchRows = (skip: number) =>
@@ -563,6 +570,7 @@ async function loadMerchList(list: ListParams): Promise<{ rows: MerchRow[]; tota
       name: row.name,
       image_url: row.image_url,
       tag: row.tag,
+      tags: row.tags,
       is_upcoming: row.is_upcoming,
       view_count: row.view_count,
       // Prisma Decimal -> a plain string the price input can hold.

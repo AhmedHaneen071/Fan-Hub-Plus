@@ -64,6 +64,7 @@ export const MERCH_TAG_LABELS: Record<(typeof MERCH_TAGS)[number], string> = {
 
 const categoryId = z
   .string()
+  .trim()
   .min(1, "Pick a fandom.")
   .max(60, "Pick a fandom.");
 
@@ -122,6 +123,7 @@ export const contentSchema = z.object({
   categoryId,
   title: z.string().trim().min(2, "Title is required.").max(120, "Keep the title under 120 characters."),
   type: z.enum(CONTENT_TYPES),
+  tags: z.string().trim().max(300, "Keep tags under 300 characters."),
   genre: z.string().trim().max(40, "Keep the genre under 40 characters."),
   description: z
     .string()
@@ -149,6 +151,7 @@ export const merchSchema = z.object({
   name: z.string().trim().min(2, "Name is required.").max(120),
   imageUrl: optionalUrl,
   tag: z.enum(MERCH_TAGS),
+  tags: z.string().trim().max(300, "Keep tags under 300 characters."),
   isUpcoming: z.boolean(),
   // Display-only. There is no checkout in this project and none is planned.
   price: z
@@ -203,7 +206,7 @@ export type EventInput = z.infer<typeof eventSchema>;
 // presentation data is description / cover_image / featured, which is what the
 // category cards and the home page shelf render, so that is what this edits.
 export const categorySchema = z.object({
-  id: z.string().trim().min(1, "Missing category."),
+  id: z.string().trim().min(1, "Missing category.").max(60, "Missing category."),
   description: z
     .string()
     .trim()

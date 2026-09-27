@@ -156,6 +156,8 @@ model Content {
   category_id String
   title       String
   type        ContentType
+  // Free-form, comma-separated discovery tags used by the admin content/media manager.
+  tags        String      @default("")
   // Sub-genre (e.g. "Action", "Romance") so the explorer can drill down past
   // the fandom/category level. Free string on purpose: genres are seeded as
   // known values but the catalogue is open to new ones in the future.
@@ -217,6 +219,8 @@ model MerchandiseItem {
   name        String
   image_url   String?
   tag         MerchTag
+  // Free-form, comma-separated discovery tags in addition to the primary tag.
+  tags        String   @default("")
   is_upcoming Boolean  @default(false) // true = show in "Upcoming releases"
   view_count  Int      @default(0)
   price       Decimal? // display-only, no checkout exists in this project
