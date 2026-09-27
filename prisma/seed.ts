@@ -118,13 +118,13 @@ async function main() {
   // -------------------------------------------------------------------------
   // Users — one per role, as required. Passwords below are the demo logins.
   // -------------------------------------------------------------------------
-  const adminPassword = await hashPassword("Admin@1234");
-  const userPassword = await hashPassword("User@1234");
-  const visitorPassword = await hashPassword("Visitor@1234");
+  const adminPassword = await hashPassword("HubAdmin!26-Local");
+  const userPassword = await hashPassword("HubFan!26-Local");
+  const visitorPassword = await hashPassword("HubVisitor!26-Local");
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@fanhub.dev" },
-    update: {},
+    update: { password_hash: adminPassword },
     create: {
       name: "Alex Admin",
       email: "admin@fanhub.dev",
@@ -135,7 +135,7 @@ async function main() {
 
   const regular = await prisma.user.upsert({
     where: { email: "user@fanhub.dev" },
-    update: {},
+    update: { password_hash: userPassword },
     create: {
       name: "Mia Fan",
       email: "user@fanhub.dev",
@@ -146,7 +146,7 @@ async function main() {
 
   const visitor = await prisma.user.upsert({
     where: { email: "visitor@fanhub.dev" },
-    update: {},
+    update: { password_hash: visitorPassword },
     create: {
       name: "Guido Guest",
       email: "visitor@fanhub.dev",
@@ -180,7 +180,7 @@ async function main() {
     // Anime
     { title: "Neon Skyline Saga — Episode Guide", type: "ARTICLE", category: "ANIME", genre: "Action", description: "A full walkthrough of every arc, the studio secrets behind the animation, and the music that made the finale unforgettable.", popularity: 92, release: "2024-02-14T00:00:00.000Z", media: "/seed/anime.svg" },
     { title: "Studio Spotlight: Frame-by-Frame Interviews", type: "VIDEO", category: "ANIME", genre: "Action", description: "We sat down with the key artists and animators to break down how the famous rain scene was drawn.", popularity: 78, release: "2024-05-02T00:00:00.000Z", media: null },
-    { title: "The Official Soundtrack Review", type: "AUDIO", category: "ANIME", genre: "Music", description: "A track-by-track listen of the fan-favourite soundtrack, with the composers' notes.", popularity: 55, release: "2023-11-20T00:00:00.000Z", media: null },
+    { title: "The Official Soundtrack Review", type: "AUDIO", category: "ANIME", genre: "Music", description: "A track-by-track listen of the fan-favourite soundtrack, with the composers' notes.", popularity: 55, release: "2023-11-20T00:00:00.000Z", media: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
     { title: "The Quiet Season: A Slice-of-Life Reading", type: "ARTICLE", category: "ANIME", genre: "Drama", description: "Why the most understated show of the year became a fan comfort watch, scene by scene.", popularity: 43, release: "2025-01-10T00:00:00.000Z", media: null },
     { title: "Winter Releases: 12 Anime to Watch", type: "VIDEO", category: "ANIME", genre: "Fantasy", description: "The winter line-up, ranked by buzz and quality so your watchlist is decided before January ends.", popularity: 60, release: "2024-11-30T00:00:00.000Z", media: null },
     { title: "Anime Artbook: Settings & Sketches", type: "IMAGE", category: "ANIME", genre: "Art", description: "Concept sketches and setting art from the season's most praised productions.", popularity: 50, release: "2023-06-15T00:00:00.000Z", media: null },
@@ -189,7 +189,7 @@ async function main() {
     { title: "Release Recap: The Big Autumn Line-Up", type: "VIDEO", category: "GAMING", genre: "Action", description: "Hands-on impressions of the season's most anticipated titles.", popularity: 71, release: "2023-09-30T00:00:00.000Z", media: null },
     { title: "Speedrun Timeline: Parts 1–3", type: "VIDEO", category: "GAMING", genre: "Adventure", description: "The record-breaking runs that rewrote the leaderboards, annotated by the runners.", popularity: 47, release: "2024-07-20T00:00:00.000Z", media: null },
     { title: "Indie Spotlight: Cozy & Clever Picks", type: "ARTICLE", category: "GAMING", genre: "Adventure", description: "Ten indies the community loved this year, from farming sims to logic puzzlers.", popularity: 56, release: "2025-02-05T00:00:00.000Z", media: null },
-    { title: "The Sound of the Grid: Racing OSTs", type: "AUDIO", category: "GAMING", genre: "Music", description: "An energetic mix of the driving tracks that make racing games sing.", popularity: 44, release: "2022-12-01T00:00:00.000Z", media: null },
+    { title: "The Sound of the Grid: Racing OSTs", type: "AUDIO", category: "GAMING", genre: "Music", description: "An energetic mix of the driving tracks that make racing games sing.", popularity: 44, release: "2022-12-01T00:00:00.000Z", media: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3" },
     { title: "E-sports Arena: Finals, Explained", type: "ARTICLE", category: "GAMING", genre: "Documentary", description: "How the grand final was won — the drafts, the calls, and the comeback.", popularity: 82, release: "2024-09-18T00:00:00.000Z", media: null },
     // Movies
     { title: "Cinema Comeback: Summer Blockbusters Ranked", type: "ARTICLE", category: "MOVIES", genre: "Action", description: "Every summer release ranked by box office hype and fan reaction.", popularity: 84, release: "2024-06-01T00:00:00.000Z", media: "/seed/movies.svg" },
@@ -197,7 +197,7 @@ async function main() {
     { title: "Director's Cut: The Editing Room Floor", type: "VIDEO", category: "MOVIES", genre: "Drama", description: "What changed between the festival cut and the theatrical release, film by film.", popularity: 58, release: "2023-12-05T00:00:00.000Z", media: null },
     { title: "Midnight Horror Picks for Marathon Nights", type: "ARTICLE", category: "MOVIES", genre: "Horror", description: "The scariest films of the decade, ranked for consecutive-night viewing.", popularity: 67, release: "2024-10-18T00:00:00.000Z", media: null },
     { title: "Animation for Adults: What's Next?", type: "ARTICLE", category: "MOVIES", genre: "Fantasy", description: "Grown-up animation is having a moment. Where does it go from here?", popularity: 49, release: "2025-03-01T00:00:00.000Z", media: null },
-    { title: "Score Sessions: Composers in the Studio", type: "AUDIO", category: "MOVIES", genre: "Music", description: "Themes and sketches from the year's biggest film scores, with composer commentary.", popularity: 52, release: "2022-06-20T00:00:00.000Z", media: null },
+    { title: "Score Sessions: Composers in the Studio", type: "AUDIO", category: "MOVIES", genre: "Music", description: "Themes and sketches from the year's biggest film scores, with composer commentary.", popularity: 52, release: "2022-06-20T00:00:00.000Z", media: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3" },
     // TV shows
     { title: "The Reunion: Season Finale Explained", type: "ARTICLE", category: "TV_SHOWS", genre: "Mystery", description: "We break down every twist in the season finale and what it means for next year.", popularity: 90, release: "2024-04-22T00:00:00.000Z", media: "/seed/tv.svg" },
     { title: "How the Writers' Room Really Works", type: "VIDEO", category: "TV_SHOWS", genre: "Documentary", description: "An exclusive look at a TV writers' room from outline to final draft.", popularity: 47, release: "2024-02-01T00:00:00.000Z", media: null },
@@ -208,7 +208,7 @@ async function main() {
     // K-pop
     { title: "Comeback Coverage: The New Mini-Album", type: "ARTICLE", category: "KPOP", genre: "Pop", description: "First listen, track-by-track highlights and the fan chant guide.", popularity: 95, release: "2024-05-14T00:00:00.000Z", media: "/seed/kpop.svg" },
     { title: "Stage Outfits Gallery — World Tour", type: "IMAGE", category: "KPOP", genre: "Art", description: "Every outfit from the three-night Seoul finale, catalogued by member.", popularity: 69, release: "2024-03-08T00:00:00.000Z", media: null },
-    { title: "The Album, Track-by-Track", type: "AUDIO", category: "KPOP", genre: "Pop", description: "A producer's listen-through of the comeback mini-album, sound by sound.", popularity: 88, release: "2024-05-15T00:00:00.000Z", media: null },
+    { title: "The Album, Track-by-Track", type: "AUDIO", category: "KPOP", genre: "Pop", description: "A producer's listen-through of the comeback mini-album, sound by sound.", popularity: 88, release: "2024-05-15T00:00:00.000Z", media: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3" },
     { title: "Debut Watch: Rookies of the Season", type: "ARTICLE", category: "KPOP", genre: "Pop", description: "The newcomers to know, with debut stage highlights and fan reactions.", popularity: 57, release: "2024-08-09T00:00:00.000Z", media: null },
     { title: "Fan Choreography Breakdown", type: "VIDEO", category: "KPOP", genre: "Dance", description: "Line-by-line notes on the point choreography from this tour's biggest hit.", popularity: 73, release: "2023-07-21T00:00:00.000Z", media: null },
     { title: "The Concert Streaming Era", type: "VIDEO", category: "KPOP", genre: "Documentary", description: "How live-streamed concerts turned global fanbases into nightly audiences.", popularity: 50, release: "2025-01-05T00:00:00.000Z", media: null },
@@ -354,7 +354,7 @@ async function main() {
       { question: "How do I reset my password?", answer: "Use 'Forgot password' on the login screen. We email you a single-use reset link that expires in 30 minutes.", keywords: "password, reset, forgot" },
       { question: "What can a registered user do?", answer: "Registered users can bookmark content, rate media, submit fan content for review, send feedback, and manage their profile.", keywords: "user, benefits, registered, features" },
       { question: "How does fan content get approved?", answer: "Fan submissions go to a pending queue. An admin reviews each submission before it is published, to keep the catalogue clean.", keywords: "submission, approve, pending, fan content" },
-      { question: "Where are events listed?", answer: "The Events calendar lists every fandom event by city and date, and the map shows nearby events using your browser location.", keywords: "event, calendar, map, ticket" },
+      { question: "Where are events listed?", answer: "The Events calendar lists fandom events by city and date. If you choose Use my location and grant browser permission, the map can show your position and sort events by approximate distance.", keywords: "event, calendar, map, ticket" },
       { question: "What fandom categories exist?", answer: "Anime, Gaming, Movies, TV Shows, K-pop, Comics, Manga and Cosplay.", keywords: "category, categories, fandoms" },
       { question: "How does bookmarking work?", answer: "Open any content, character profile or merchandise item and press the bookmark icon. You can add a private note to each bookmark.", keywords: "bookmark, save, note" },
       { question: "How do I rate content?", answer: "On any content detail page use the star scale (1–5) or the thumbs up/down control. You can change your rating at any time.", keywords: "rate, rating, stars, thumbs" },
@@ -392,9 +392,9 @@ async function main() {
 
   console.log("Seed complete!");
   console.log("Demo logins:");
-  console.log("  admin   -> admin@fanhub.dev / Admin@1234");
-  console.log("  user    -> user@fanhub.dev / User@1234");
-  console.log("  visitor -> visitor@fanhub.dev / Visitor@1234");
+  console.log("  admin   -> admin@fanhub.dev / HubAdmin!26-Local");
+  console.log("  user    -> user@fanhub.dev / HubFan!26-Local");
+  console.log("  visitor -> visitor@fanhub.dev / HubVisitor!26-Local");
 }
 
 main()

@@ -18,6 +18,7 @@ import { getMerchDetail, formatPrice, TAG_LABELS } from "@/lib/queries/merch";
 import { getMerchSiblingShelf, MerchSiblingShelf } from "@/lib/queries/merch-shelf";
 import { CATEGORY_LABELS, type CategoryValue } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
+import { MerchViewTracker } from "@/components/merch/merch-view-tracker";
 
 type MerchDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -54,6 +55,7 @@ export default async function MerchDetailPage({ params }: MerchDetailPageProps) 
 
   return (
     <div className="space-y-10">
+      <MerchViewTracker itemId={item.id} />
       <Breadcrumbs
         crumbs={[
           { label: "Merchandise", href: "/merch" },

@@ -17,6 +17,16 @@ type MediaPlayerProps = {
   poster?: string | null;
 };
 
+export function AudioPlayer({ src, title }: { src: string; title: string }) {
+  return <div className="space-y-2 rounded-2xl border bg-card p-5">
+    <p className="font-medium">Listen: {title}</p>
+    <audio controls preload="none" className="w-full" aria-label={`Audio player for ${title}`}>
+      <source src={src} />
+      Your browser does not support audio playback.
+    </audio>
+  </div>;
+}
+
 export function MediaPlayer({ trailerUrl, title, poster }: MediaPlayerProps) {
   const videoId = extractYouTubeId(trailerUrl);
 

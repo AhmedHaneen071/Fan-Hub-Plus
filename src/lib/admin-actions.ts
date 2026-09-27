@@ -103,20 +103,49 @@ export async function reviewSubmission(
   if (!parsedId.success) return { ok: false, error: "Submission not found." };
 
   try {
-    const submission = await prisma.fanSubmission.findUnique({
-      where: { id: parsedId.data },
+    const session = await auth();
+    const reviewerId = session?.user?.id;
+    if (!reviewerId) return { ok: false, error: "Please sign in." };
+    await prisma.$transaction(async (tx) => {
+      const submission = await tx.fanSubmission.findUnique({ where: { id: parsedId.data } });
+      if (!submission) throw new Error("SUBMISSION_NOT_FOUND");
+      const claimed = await tx.fanSubmission.updateMany({
+        where: { id: parsedId.data, status: "PENDING" },
+        data: { status: parsed.data, reviewed_at: new Date(), reviewed_by: reviewerId },
+      });
+      if (claimed.count !== 1) throw new Error("SUBMISSION_ALREADY_REVIEWED");
+      if (parsed.data === "APPROVED") {
+        if (!submission.category_id) throw new Error("Choose a fandom before approving this submission.");
+        if (submission.type === "FEATURED_ARTICLE") {
+          await tx.featuredArticle.create({
+            data: {
+              category_id: submission.category_id,
+              title: submission.title,
+              rich_text_body: submission.body,
+            },
+          });
+        } else {
+          await tx.content.create({
+            data: {
+              category_id: submission.category_id,
+              title: submission.title,
+              type: "ARTICLE",
+              description: submission.body,
+            },
+          });
+        }
+      }
     });
-    if (!submission) return { ok: false, error: "Submission not found." };
-
-    await prisma.fanSubmission.update({
-      where: { id: parsedId.data },
-      data: { status: parsed.data, reviewed_at: new Date() },
-    });
-  } catch {
-    return { ok: false, error: "That submission could not be updated." };
+  } catch (error) {
+    if (error instanceof Error && error.message === "SUBMISSION_NOT_FOUND") return { ok: false, error: "Submission not found." };
+    if (error instanceof Error && error.message === "SUBMISSION_ALREADY_REVIEWED") return { ok: false, error: "This submission has already been reviewed." };
+    return { ok: false, error: error instanceof Error && error.message.startsWith("Choose a fandom") ? error.message : "That submission could not be reviewed and published." };
   }
 
   revalidatePath("/admin");
+  revalidatePath("/articles");
+  revalidatePath("/explore");
+  revalidatePath("/");
   return {
     ok: true,
     message: parsed.data === "APPROVED" ? "Submission approved." : "Submission rejected.",
@@ -298,16 +327,21 @@ export async function saveContent(input: unknown): Promise<AdminResult> {
     media_url: blankToNull(parsed.data.mediaUrl),
     trailer_url: blankToNull(parsed.data.trailerUrl),
     popularity_score: parseNumberOrNull(parsed.data.popularityScore) ?? 0,
+    editorial_score: parseNumberOrNull(parsed.data.popularityScore) ?? 0,
+    is_upcoming: parsed.data.isUpcoming,
   };
 
   try {
     if (id) {
-      const existing = await prisma.content.findUnique({
-        where: { id },
-        select: { id: true },
+      const updated = await prisma.$transaction(async (tx) => {
+        const existing = await tx.content.findUnique({ where: { id }, select: { rating_score: true, _count: { select: { ratings: true } } } });
+        if (!existing) return false;
+        const editorial = data.editorial_score;
+        const popularity = existing.rating_score === null ? editorial : Math.round((editorial * 3 + existing.rating_score * existing._count.ratings) / (3 + existing._count.ratings));
+        await tx.content.update({ where: { id }, data: { ...data, popularity_score: popularity } });
+        return true;
       });
-      if (!existing) return { ok: false, error: "That title no longer exists." };
-      await prisma.content.update({ where: { id }, data });
+      if (!updated) return { ok: false, error: "That title no longer exists." };
     } else {
       await prisma.content.create({ data });
     }

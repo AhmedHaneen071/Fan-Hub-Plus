@@ -149,6 +149,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }));
 
   const latestSubmission = user.submissions[0];
+  const activity = [
+    ...bookmarkRows.map((row) => ({ label: `Bookmarked ${row.content?.title ?? row.character?.name ?? row.merchandise?.name ?? "an item"}`, at: row.created_at })),
+    ...ratingRows.map((row) => ({ label: `Rated ${row.content.title}`, at: row.created_at })),
+    ...user.submissions.map((row) => ({ label: `Submitted “${row.title}” (${row.status.toLowerCase()})`, at: row.created_at })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 8);
 
   return (
     <div className="space-y-8">
@@ -206,6 +211,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             ) : null}
           </Card>
 
+          <Card className="md:col-span-2">
+            <CardHeader><CardTitle>Recent activity</CardTitle></CardHeader>
+            <CardContent>{activity.length ? <ol className="space-y-3">{activity.map((item, index) => <li key={`${item.at.toISOString()}-${index}`} className="flex flex-wrap justify-between gap-2 border-b pb-2 text-sm last:border-0"><span>{item.label}</span><time dateTime={item.at.toISOString()} className="text-muted-foreground">{item.at.toLocaleDateString()}</time></li>)}</ol> : <p className="text-sm text-muted-foreground">Your bookmarks, ratings, and submissions will show here.</p>}</CardContent>
+          </Card>
+
           {/* Favourite fandoms */}
           <Card>
             <CardHeader>
@@ -233,6 +243,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </Button>
               <Button asChild variant="outline">
                 <Link href="/events">Find events</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/submit">Share fan content</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link href="/chatbot">Ask the hub</Link>

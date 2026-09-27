@@ -309,6 +309,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
       {usage ? (
         <div className="grid gap-5 lg:grid-cols-2">
+          <Card className="lg:col-span-2"><CardHeader><CardTitle>Usage overview</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-3">
+            <div><p className="text-2xl font-bold">{usage.activeUsers}</p><p className="text-sm text-muted-foreground">Active users · last {usage.activeWindowDays} days</p></div>
+            <div><p className="text-2xl font-bold">{usage.chatbotInteractions}</p><p className="text-sm text-muted-foreground">Chatbot interactions · last {usage.activeWindowDays} days</p></div>
+            <div><p className="text-sm font-semibold">Popular categories</p>{usage.popularCategories.length ? usage.popularCategories.map((category) => <p key={category.name} className="text-sm text-muted-foreground">{category.name.replaceAll("_", " ")} · {category.count} items</p>) : <p className="text-sm text-muted-foreground">No catalogue records yet.</p>}</div>
+          </CardContent></Card>
           <Card>
             <CardHeader>
               <CardTitle>Most bookmarked</CardTitle>
@@ -432,6 +437,12 @@ async function loadSubmissions(): Promise<SubmissionRow[]> {
     include: { user: { select: { name: true, email: true } }, category: { select: { name: true } } },
   });
 
+  const reviewerIds = [...new Set(submissions.map((row) => row.reviewed_by).filter((id): id is string => Boolean(id)))];
+  const reviewers = reviewerIds.length ? await prisma.user.findMany({
+    where: { id: { in: reviewerIds } }, select: { id: true, name: true },
+  }) : [];
+  const reviewerNames = new Map(reviewers.map((row) => [row.id, row.name]));
+
   return submissions.map((submission) => ({
     id: submission.id,
     title: submission.title,
@@ -441,6 +452,8 @@ async function loadSubmissions(): Promise<SubmissionRow[]> {
     author: submission.user.name,
     authorEmail: submission.user.email,
     category: submission.category?.name ?? null,
+    type: submission.type,
+    reviewedBy: submission.reviewed_by ? reviewerNames.get(submission.reviewed_by) ?? "Former admin" : null,
   }));
 }
 
@@ -529,6 +542,7 @@ async function loadContentList(list: ListParams): Promise<{ rows: ContentRow[]; 
       media_url: row.media_url,
       trailer_url: row.trailer_url,
       popularity_score: row.popularity_score,
+      is_upcoming: row.is_upcoming,
       category_id: row.category_id,
       category_name: row.category.name,
       bookmarks: row._count.bookmarks,
@@ -858,7 +872,9 @@ async function loadCategoryList(): Promise<{ rows: CategoryRow[]; total: number 
   };
 }
 
-async function loadUsage() {  const [topBookmarked, topRated, openFeedback, recentQueries] = await Promise.all([
+async function loadUsage() {
+  const activeSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const [topBookmarked, topRated, openFeedback, recentQueries, activeUsers, chatbotInteractions, popularCategories] = await Promise.all([
     prisma.bookmark.groupBy({
       by: ["content_id"],
       _count: { _all: true },
@@ -879,6 +895,9 @@ async function loadUsage() {  const [topBookmarked, topRated, openFeedback, rece
       take: 6,
       include: { user: { select: { name: true } } },
     }),
+    prisma.user.count({ where: { role: { in: ["USER", "ADMIN"] }, last_seen: { gte: activeSince } } }),
+    prisma.chatbotQuery.count({ where: { created_at: { gte: activeSince } } }),
+    prisma.content.groupBy({ by: ["category_id"], _count: { _all: true }, orderBy: { _count: { category_id: "desc" } }, take: 8 }),
   ]);
 
   // groupBy returns content_id as string | null; both lists are filtered to
@@ -886,7 +905,8 @@ async function loadUsage() {  const [topBookmarked, topRated, openFeedback, rece
   const bookmarkIds = topBookmarked.map((row) => row.content_id as string);
   const ratingIds = topRated.map((row) => row.content_id as string);
 
-  const [bookmarkItems, ratingItems] = await Promise.all([
+  const categoryIds = popularCategories.map((row) => row.category_id);
+  const [bookmarkItems, ratingItems, popularCategoryRows] = await Promise.all([
     prisma.content.findMany({
       where: { id: { in: bookmarkIds } },
       select: { id: true, title: true },
@@ -895,7 +915,9 @@ async function loadUsage() {  const [topBookmarked, topRated, openFeedback, rece
       where: { id: { in: ratingIds } },
       select: { id: true, title: true },
     }),
+    prisma.category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } }),
   ]);
+  const categoryNames = new Map(popularCategoryRows.map((row) => [row.id, row.name]));
 
   return {
     topBookmarked: topBookmarked.map((row) => ({
@@ -909,6 +931,10 @@ async function loadUsage() {  const [topBookmarked, topRated, openFeedback, rece
     bookmarkTitles: new Map(bookmarkItems.map((item) => [item.id, item.title])),
     ratingTitles: new Map(ratingItems.map((item) => [item.id, item.title])),
     openFeedback,
+    activeUsers,
+    activeWindowDays: 30,
+    chatbotInteractions,
+    popularCategories: popularCategories.map((row) => ({ name: categoryNames.get(row.category_id) ?? "Unknown", count: row._count._all })),
     recentQueries: recentQueries.map((item) => ({
       id: item.id,
       message: item.message,

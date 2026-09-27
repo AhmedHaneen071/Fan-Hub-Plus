@@ -8,8 +8,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getHomeFeed } from "@/lib/queries/content";
+import { getUpcomingContent } from "@/lib/queries/content";
 import { HeroCarousel } from "@/components/content/hero-carousel";
 import { ContentLane } from "@/components/content/content-lane";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
+import type { CategoryValue } from "@/lib/constants";
 
 const highlights = [
   {
@@ -25,7 +29,7 @@ const highlights = [
   {
     icon: MapPin,
     title: "Events on a map",
-    body: "Browse fandom events by city and see what's happening near you on the Live map.",
+    body: "Browse fandom events by city and date; request location access to see distances on the Live map.",
   },
   {
     icon: MessageCircleQuestion,
@@ -37,7 +41,14 @@ const highlights = [
 export const metadata = { title: "Home" };
 
 export default async function HomePage() {
-  const feed = await getHomeFeed();
+  const session = await auth();
+  const user = session?.user?.id ? await prisma.user.findUnique({
+    where: { id: session.user.id }, select: { favoriteCategories: { select: { name: true } } },
+  }) : null;
+  const [feed, upcoming] = await Promise.all([
+    getHomeFeed(user?.favoriteCategories.map((category) => category.name as CategoryValue) ?? []),
+    getUpcomingContent(10),
+  ]);
 
   return (
     <div className="flex flex-col">
@@ -76,6 +87,7 @@ export default async function HomePage() {
           href="/explore?sort=latest"
           items={feed.latest}
         />
+        {upcoming.length ? <ContentLane title="Coming soon" href="/upcoming" items={upcoming} /> : null}
         {feed.categoryLanes.map((lane) => (
           <ContentLane
             key={lane.categoryId}
@@ -126,7 +138,7 @@ export default async function HomePage() {
           <h2 className="font-heading text-3xl">Never miss a convention</h2>
           <p className="text-muted-foreground">
             Scrub the event calendar by city, grab ticket links and follow the
-            Live map to what&apos;s near you.
+            Live map to explore events by city, date, and optional location.
           </p>
         </div>
         <Button asChild variant="outline" className="h-11">

@@ -17,8 +17,10 @@ import { Breadcrumbs } from "@/components/explore/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getArticleDetail, getSiblingArticles } from "@/lib/queries/articles";
-import { parseEventTimeline, sanitizeArticleHtml } from "@/lib/safe-html";
+import { sanitizeArticleHtml } from "@/lib/safe-html";
+import { ArticleTimeline } from "@/components/articles/article-timeline";
 import { CATEGORY_LABELS, type CategoryValue } from "@/lib/constants";
+import { ShareButton } from "@/components/engagement/share-button";
 
 type ArticleDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -41,7 +43,6 @@ export default async function ArticleDetailPage({ params }: ArticleDetailPagePro
   if (!article) notFound();
 
   const siblings = await getSiblingArticles(article.id, article.category_id);
-  const timeline = parseEventTimeline(article.event_timeline);
   const body = sanitizeArticleHtml(article.rich_text_body);
 
   return (
@@ -61,6 +62,7 @@ export default async function ArticleDetailPage({ params }: ArticleDetailPagePro
           <h1 className="text-3xl font-heading font-bold tracking-wide sm:text-4xl">
             {article.title}
           </h1>
+          <ShareButton title={article.title} />
         </header>
 
         {article.cover_image ? (
@@ -93,24 +95,7 @@ export default async function ArticleDetailPage({ params }: ArticleDetailPagePro
         )}
       </article>
 
-      {timeline.length > 0 ? (
-        <section aria-labelledby="timeline-heading" className="space-y-4">
-          <h2 id="timeline-heading" className="text-2xl font-heading font-semibold tracking-wide">
-            Timeline
-          </h2>
-          <ol className="space-y-4 border-l-2 border-accent pl-6">
-            {timeline.map((entry, index) => (
-              <li key={`${entry.date}-${index}`} className="space-y-1">
-                {entry.date ? (
-                  <p className="text-sm font-semibold text-accent">{entry.date}</p>
-                ) : null}
-                {entry.label ? <p className="font-medium">{entry.label}</p> : null}
-                {entry.body ? <p className="text-sm text-muted-foreground">{entry.body}</p> : null}
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      <ArticleTimeline value={article.event_timeline} />
 
       {siblings.length > 0 ? (
         <section aria-labelledby="read-next-heading" className="space-y-4">

@@ -194,6 +194,16 @@ export async function getRelatedContent(
   return toContentCards(items);
 }
 
+export async function getUpcomingContent(limit = 24) {
+  const rows = await prisma.content.findMany({
+    where: { is_upcoming: true },
+    orderBy: [{ release_date: "asc" }, { popularity_score: "desc" }],
+    take: limit,
+    select: CARD_SELECT,
+  });
+  return toContentCards(rows);
+}
+
 // ---- Homepage feed ---------------------------------------------------------
 // Prime-style shelf model: a hero of popular items plus horizontal "lanes"
 // (trending, freshest, then one per featured fandom).
@@ -219,7 +229,7 @@ export type HomeFeed = {
 const LANE_LIMIT = 10;
 const HERO_LIMIT = 6;
 
-export async function getHomeFeed(): Promise<HomeFeed> {
+export async function getHomeFeed(favoriteCategories: CategoryValue[] = []): Promise<HomeFeed> {
   const [hero, trending, latest, categories, lanes] = await Promise.all([
     prisma.content.findMany({
       orderBy: [{ popularity_score: "desc" }, { release_date: "desc" }],
@@ -246,8 +256,8 @@ export async function getHomeFeed(): Promise<HomeFeed> {
       },
     }),
     prisma.category.findMany({
-      where: { featured: true },
-      orderBy: { name: "asc" },
+      where: favoriteCategories.length ? { OR: [{ featured: true }, { name: { in: favoriteCategories } }] } : { featured: true },
+      orderBy: [{ name: "asc" }],
       select: {
         id: true,
         name: true,
@@ -261,11 +271,32 @@ export async function getHomeFeed(): Promise<HomeFeed> {
     }),
   ]);
 
+  const personalHighlights = favoriteCategories.length
+    ? await prisma.content.findMany({
+        where: { category: { name: { in: favoriteCategories } } },
+        orderBy: [{ popularity_score: "desc" }, { release_date: "desc" }],
+        take: 3,
+        select: CARD_SELECT,
+      })
+    : [];
+  const heroIds = new Set<string>();
+  const personalizedHero = [...personalHighlights, ...hero].filter((item) => {
+    if (heroIds.has(item.id)) return false;
+    heroIds.add(item.id);
+    return true;
+  }).slice(0, HERO_LIMIT);
+
+  const laneRows = [...lanes].sort((a, b) => {
+    const ai = favoriteCategories.indexOf(a.name as CategoryValue);
+    const bi = favoriteCategories.indexOf(b.name as CategoryValue);
+    return (ai === -1 ? Number.MAX_SAFE_INTEGER : ai) - (bi === -1 ? Number.MAX_SAFE_INTEGER : bi);
+  });
+
   return {
-    hero: toContentCards(hero),
+    hero: toContentCards(personalizedHero),
     trending: toContentCards(trending),
     latest: toContentCards(latest),
-    categoryLanes: lanes.map((lane) => ({
+    categoryLanes: laneRows.map((lane) => ({
       categoryId: lane.id,
       categoryName: lane.name as CategoryValue,
       categoryLabel: CATEGORY_LABELS[lane.name as CategoryValue],

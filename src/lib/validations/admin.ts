@@ -140,6 +140,7 @@ export const contentSchema = z.object({
       (value) => value === "" || (/^\d{1,3}$/.test(value) && Number(value) >= 0 && Number(value) <= 100),
       { message: "Enter a whole number from 0 to 100." }
     ),
+  isUpcoming: z.boolean(),
 });
 
 export type ContentInput = z.infer<typeof contentSchema>;

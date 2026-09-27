@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { SUSPENDED_PATH, isSuspended } from "@/lib/guards";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumbs } from "@/components/explore/breadcrumbs";
-import { NameForm, PasswordForm } from "@/components/profile/profile-forms";
+import { AvatarForm, NameForm, PasswordForm } from "@/components/profile/profile-forms";
 
 export const metadata: Metadata = {
   title: "My profile",
@@ -29,6 +29,7 @@ export default async function ProfilePage() {
     where: { id: session.user.id },
     select: {
       name: true,
+      avatar_url: true,
       email: true,
       role: true,
       suspended_until: true,
@@ -49,6 +50,11 @@ export default async function ProfilePage() {
           {user.email} · {user.role.toLowerCase()} account
         </p>
       </header>
+
+      <Card>
+        <CardHeader><CardTitle>Profile picture</CardTitle><CardDescription>Upload an image to use as your avatar. Images are stored in the app&apos;s local public uploads directory.</CardDescription></CardHeader>
+        <CardContent><AvatarForm initialAvatar={user.avatar_url} name={user.name} /></CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

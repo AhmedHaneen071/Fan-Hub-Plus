@@ -15,7 +15,8 @@ import { Breadcrumbs } from "@/components/explore/breadcrumbs";
 import { ContentMedia, heatLabel } from "@/components/explore/content-media";
 import { ContentLane } from "@/components/content/content-lane";
 import { ContentEngagement } from "@/components/engagement/content-engagement";
-import { MediaPlayer } from "@/components/content/media-player";
+import { ShareButton } from "@/components/engagement/share-button";
+import { AudioPlayer, MediaPlayer } from "@/components/content/media-player";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getContentDetail, getRelatedContent } from "@/lib/queries/content";
@@ -90,7 +91,9 @@ export default async function ContentDetailPage({
         <div className="relative grid grid-cols-1 gap-8 p-6 sm:p-10 lg:grid-cols-5 lg:items-center">
           {/* Featured player / poster */}
           <div className="self-start lg:col-span-2">
-            {item.trailer_url ? (
+            {item.type === "AUDIO" && item.media_url ? (
+              <AudioPlayer src={item.media_url} title={item.title} />
+            ) : item.trailer_url ? (
               <MediaPlayer
                 trailerUrl={item.trailer_url}
                 title={item.title}
@@ -122,6 +125,7 @@ export default async function ContentDetailPage({
                   </Link>
                 </Badge>
                 <Badge variant="outline">{CONTENT_TYPE_LABELS[item.type]}</Badge>
+                {item.is_upcoming ? <Badge variant="outline">Upcoming release</Badge> : null}
                 {item.genre ? <Badge variant="outline">{item.genre}</Badge> : null}
                 <Badge variant="outline" className="gap-1 text-orange-500">
                   <Flame className="size-3.5" aria-hidden="true" />
@@ -142,6 +146,7 @@ export default async function ContentDetailPage({
             </p>
 
             <ContentEngagement contentId={item.id} />
+            <ShareButton title={item.title} />
           </div>
         </div>
       </section>

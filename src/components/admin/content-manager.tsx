@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DeleteConfirmDialog,
   EmptyState,
@@ -66,6 +67,7 @@ export type ContentRow = {
   media_url: string | null;
   trailer_url: string | null;
   popularity_score: number;
+  is_upcoming: boolean;
   category_id: string;
   category_name: string;
   bookmarks: number;
@@ -88,6 +90,7 @@ const BLANK: ContentInput = {
   mediaUrl: "",
   trailerUrl: "",
   popularityScore: "",
+  isUpcoming: false,
 };
 
 export function ContentManager({
@@ -130,6 +133,7 @@ export function ContentManager({
       mediaUrl: row.media_url ?? "",
       trailerUrl: row.trailer_url ?? "",
       popularityScore: row.popularity_score === 0 ? "" : String(row.popularity_score),
+      isUpcoming: row.is_upcoming,
     });
     setOpen(true);
   }
@@ -192,6 +196,7 @@ export function ContentManager({
                   Has trailer
                 </Badge>
               )}
+              {row.is_upcoming ? <Badge variant="outline">Upcoming</Badge> : null}
             </div>
             <p className="pt-1 text-sm text-muted-foreground">{row.description}</p>
             <p className="text-xs text-muted-foreground">
@@ -329,6 +334,13 @@ export function ContentManager({
                   )}
                 />
               </div>
+
+              <FormField control={form.control} name="isUpcoming" render={({ field }) => (
+                <FormItem className="flex items-center gap-3 rounded-lg border p-3">
+                  <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  <div><FormLabel>Upcoming release</FormLabel><FormDescription>Include this title in the Coming soon shelf.</FormDescription></div>
+                </FormItem>
+              )} />
 
               <FormField
                 control={form.control}

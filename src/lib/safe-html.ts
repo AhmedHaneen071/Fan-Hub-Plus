@@ -80,6 +80,7 @@ function escapeAttribute(value: string): string {
 function safeUrl(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
+  if (trimmed.startsWith("//") || /[\u0000-\u001f\u007f]/.test(trimmed)) return null;
   // A scheme-relative or relative URL is fine; an explicit scheme must be safe.
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
     return trimmed.startsWith("/") || trimmed.startsWith("#") ? trimmed : null;

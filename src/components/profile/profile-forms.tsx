@@ -8,6 +8,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,6 +24,34 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { updateDisplayName, changePassword } from "@/lib/profile-actions";
+
+export function AvatarForm({ initialAvatar, name }: { initialAvatar: string | null; name: string }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [preview, setPreview] = useState(initialAvatar);
+  return <form className="flex flex-wrap items-center gap-4" onSubmit={async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const file = new FormData(form).get("avatar");
+    if (!(file instanceof File) || !file.size) return toast.error("Choose a PNG, JPEG, or WebP image.");
+    setPending(true);
+    try {
+      const response = await fetch("/api/profile/avatar", { method: "POST", body: new FormData(form) });
+      const result = await response.json() as { error?: string; avatarUrl?: string };
+      if (!response.ok || !result.avatarUrl) throw new Error(result.error ?? "Upload failed.");
+      setPreview(result.avatarUrl);
+      toast.success("Avatar updated.");
+      form.reset();
+      router.refresh();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Upload failed."); }
+    finally { setPending(false); }
+  }}>
+    <Avatar className="size-16"><AvatarImage src={preview ?? undefined} alt="" /><AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar>
+    <div className="min-w-0 flex-1 space-y-2"><label htmlFor="profile-avatar" className="text-sm font-medium">Profile picture</label><Input id="profile-avatar" name="avatar" type="file" accept="image/png,image/jpeg,image/webp" required />
+      <p className="text-xs text-muted-foreground">PNG, JPEG, or WebP · max 2 MB</p></div>
+    <Button type="submit" disabled={pending}>{pending ? "Uploading…" : "Upload avatar"}</Button>
+  </form>;
+}
 
 const nameSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(80),

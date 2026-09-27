@@ -27,6 +27,8 @@ export type SubmissionRow = {
   author: string;
   authorEmail: string;
   category: string | null;
+  type: "CONTENT" | "FEATURED_ARTICLE";
+  reviewedBy: string | null;
 };
 
 const STATUS_BADGE: Record<SubmissionRow["status"], string> = {
@@ -81,6 +83,7 @@ export function SubmissionsManager({ rows }: { rows: SubmissionRow[] }) {
                       {row.category}
                     </Badge>
                   ) : null}
+                  <Badge variant="outline">{row.type === "FEATURED_ARTICLE" ? "Featured article" : "Content article"}</Badge>
                   <span className="text-xs text-muted-foreground">
                     {row.author} ·{" "}
                     {new Date(row.createdAt).toLocaleDateString()}
@@ -88,6 +91,7 @@ export function SubmissionsManager({ rows }: { rows: SubmissionRow[] }) {
                 </div>
                 <h3 className="font-medium">{row.title}</h3>
                 <p className="line-clamp-3 text-sm text-muted-foreground">{row.body}</p>
+                {row.reviewedBy ? <p className="text-xs text-muted-foreground">Reviewed by {row.reviewedBy}</p> : null}
               </div>
 
               <div className="flex shrink-0 items-center gap-1">

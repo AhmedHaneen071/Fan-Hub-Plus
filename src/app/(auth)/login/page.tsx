@@ -37,13 +37,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
           <CardContent>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <span className="font-medium text-foreground">Admin</span> — admin@fanhub.dev · Admin@1234
+                <span className="font-medium text-foreground">Admin</span> — admin@fanhub.dev · HubAdmin!26-Local
               </li>
               <li>
-                <span className="font-medium text-foreground">User</span> — user@fanhub.dev · User@1234
+                <span className="font-medium text-foreground">User</span> — user@fanhub.dev · HubFan!26-Local
               </li>
               <li>
-                <span className="font-medium text-foreground">Visitor</span> — visitor@fanhub.dev · Visitor@1234
+                <span className="font-medium text-foreground">Visitor</span> — visitor@fanhub.dev · HubVisitor!26-Local
               </li>
             </ul>
           </CardContent>

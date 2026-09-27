@@ -46,6 +46,14 @@ const ratingIdSchema = z.object({
 // and is locked from the member side. The schema itself lives in
 // validations/engagement.ts so the form can share it.
 const feedbackIdSchema = z.string().trim().min(1).max(60);
+const fanSubmissionSchema = z.object({
+  title: z.string().trim().min(4).max(120),
+  body: z.string().trim().min(20).max(20000),
+  categoryId: z.string().trim().min(1).max(60),
+  type: z.enum(["CONTENT", "FEATURED_ARTICLE"]),
+}).refine((data) => data.type !== "CONTENT" || data.body.length <= 600, {
+  message: "Catalogue posts are limited to 600 characters.", path: ["body"],
+});
 
 // `value` depends on the chosen scale: 1..5 for stars, +/-1 for thumbs.
 const ratingSchema = z
@@ -62,12 +70,48 @@ const ratingSchema = z
     { message: "Rating value does not match the selected scale." }
   );
 
+/**
+ * Popularity blends the admin's editorial baseline with the average community
+ * score. Stars map 1–5 to 0–100; thumbs map down/up to 0/100. Three baseline
+ * votes keep a small number of ratings from abruptly replacing curation.
+ */
+async function refreshPopularity(tx: Prisma.TransactionClient, contentId: string) {
+  const content = await tx.content.findUnique({ where: { id: contentId }, select: { editorial_score: true } });
+  if (!content) return;
+  const ratings = await tx.rating.findMany({ where: { content_id: contentId }, select: { value: true, ratingType: true } });
+  if (!ratings.length) {
+    await tx.content.update({ where: { id: contentId }, data: { rating_score: null, popularity_score: content.editorial_score } });
+    return;
+  }
+  const ratingScore = Math.round(ratings.reduce((sum, rating) => sum + (rating.ratingType === "STARS" ? (rating.value - 1) * 25 : rating.value > 0 ? 100 : 0), 0) / ratings.length);
+  const popularity = Math.round((content.editorial_score * 3 + ratingScore * ratings.length) / (3 + ratings.length));
+  await tx.content.update({ where: { id: contentId }, data: { rating_score: ratingScore, popularity_score: popularity } });
+}
+
 export type ActionOutcome =
   | { ok: true; message?: string; bookmarked?: boolean }
   | { ok: false; error: string; redirectTo?: string };
 
 const VISITOR_MESSAGE =
   "Your account is in visitor mode, so this is view-only. Register a member account to save and rate.";
+
+export async function submitFanContent(input: unknown): Promise<ActionOutcome> {
+  const parsed = fanSubmissionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Check the title, fandom, and submission text." };
+  const member = requireMember(await auth(), "Visitor accounts cannot submit content. Register a member account first.");
+  if (!member.ok) return member;
+  try {
+    const category = await prisma.category.findUnique({ where: { id: parsed.data.categoryId }, select: { id: true } });
+    if (!category) return { ok: false, error: "Choose an available fandom." };
+    await prisma.fanSubmission.create({ data: { ...parsed.data, user_id: member.userId } });
+  } catch {
+    return { ok: false, error: "Your submission could not be saved. Please try again." };
+  }
+  revalidatePath("/submit");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin");
+  return { ok: true, message: "Submission sent for review." };
+}
 
 // ---------------------------------------------------------------- existence
 // The client sends an arbitrary targetType + targetId pair. Without a check the
@@ -245,7 +289,8 @@ export async function upsertRating(
     });
     if (!exists) return { ok: false, error: "That title no longer exists." };
 
-    await prisma.rating.upsert({
+    await prisma.$transaction(async (tx) => {
+      await tx.rating.upsert({
       where: {
         user_id_content_id: {
           user_id: member.userId,
@@ -259,6 +304,8 @@ export async function upsertRating(
         value: parsed.data.value,
         ratingType: parsed.data.ratingType,
       },
+      });
+      await refreshPopularity(tx, parsed.data.contentId);
     });
   } catch {
     return { ok: false, error: "That rating could not be saved. Please try again." };
@@ -279,8 +326,9 @@ export async function removeRating(contentId: string): Promise<ActionOutcome> {
   if (!member.ok) return member;
 
   try {
-    await prisma.rating.deleteMany({
-      where: { user_id: member.userId, content_id: parsed.data.contentId },
+    await prisma.$transaction(async (tx) => {
+      await tx.rating.deleteMany({ where: { user_id: member.userId, content_id: parsed.data.contentId } });
+      await refreshPopularity(tx, parsed.data.contentId);
     });
   } catch {
     return { ok: false, error: "That rating could not be removed." };
