@@ -17,8 +17,8 @@ Use Node.js 20.19 or newer and npm. MongoDB Community Server must be running loc
 1. Start the MongoDB service.
 2. Copy `.env.example` to `.env`. Generate a private `AUTH_SECRET` with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
 3. Install packages with `npm install` (or `npm ci` when using the lockfile).
-4. Start both the Express API and Vite client with `npm run dev`.
-5. Open <http://localhost:5173>. The API runs on <http://localhost:4000>.
+4. Start the combined Express API and Vite client with `npm run dev`.
+5. Open <http://localhost:5173>. The UI and API share this port; API requests use `/api`.
 
 On first start, the app creates the eight fandom category records if they do not exist. It never drops or resets MongoDB data.
 
@@ -37,9 +37,7 @@ The script copies users, fandoms, content, characters, stories, merchandise, eve
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start the API and client for development |
-| `npm run dev:api` | Start Express with Node watch mode |
-| `npm run dev:web` | Start Vite |
+| `npm run dev` | Start Express and Vite together on port `5173` |
 | `npm run build` | Type-check and build the React client |
 | `npm run start` | Serve the built client and API from Express |
 | `npm run lint` | Type-check the client |
@@ -55,8 +53,8 @@ Copy the template to `.env`; never commit `.env` or real credentials.
 | --- | --- | --- |
 | `MONGODB_URI` | Yes for deployment | MongoDB connection URI. Local default: `mongodb://127.0.0.1:27017/fanhubplus`. |
 | `AUTH_SECRET` | Yes | At least 32 characters of random data used to sign sessions. Use a new unique production value. |
-| `PORT` | No | Express port; defaults to `4000`. |
-| `CLIENT_ORIGIN` | No | Allowed browser origin for credentialed API requests; defaults to `http://localhost:5173`. |
+| `PORT` | No | Combined development server port; defaults to `5173`. |
+| `CLIENT_ORIGIN` | No | Allowed browser origin for credentialed requests; defaults to `http://localhost:5173`. |
 | `APP_URL` | For password reset | Public client origin used to construct reset links; local default `http://localhost:5173`. |
 | `SMTP_HOST` | For email | SMTP server host. |
 | `SMTP_PORT` | For email | SMTP server port; defaults to `587`. |

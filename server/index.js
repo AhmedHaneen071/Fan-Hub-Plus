@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import path from 'node:path';
+import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import express from 'express';
 import cors from 'cors';
@@ -19,7 +20,7 @@ import { User, Category, Content, Character, Article, Merch, Event, Bookmark, Ra
 
 const app = express();
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.PORT || 4000);
+const port = Number(process.env.PORT || 5173);
 const categories = ['ANIME', 'GAMING', 'MOVIES', 'TV_SHOWS', 'KPOP', 'COMICS', 'MANGA', 'COSPLAY'];
 app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
@@ -191,10 +192,36 @@ app.get('/robots.txt',(_req,res)=>res.type('text/plain').send('User-agent: *\nAl
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
 app.use(express.static(path.resolve(dirname,'../public')));
 const dist = path.resolve(dirname, '../client/dist');
-if (existsSync(dist)) { app.use(express.static(dist)); app.get('*path', (_req, res) => res.sendFile(path.join(dist, 'index.html'))); }
-app.use((err, _req, res, _next) => { console.error('API error:', err?.message || 'unknown'); if (err?.code === 11000) return res.status(409).json({ error: 'That record already exists.' }); res.status(500).json({ error: 'Something went wrong. Please try again.' }); });
 
 await connectDatabase();
 await Promise.all([Bookmark.init(),Rating.init()]);
 for(const name of categories) await Category.updateOne({name},{$setOnInsert:{name,description:`A home for ${name.toLowerCase().replace('_',' ')} fans.`,featured:false}},{upsert:true});
-app.listen(port, () => console.info(`Fan Hub Plus API listening on http://localhost:${port}`));
+if (process.env.NODE_ENV !== 'production') {
+  const httpServer = createServer(app);
+  const { createServer: createViteServer } = await import('vite');
+  const vite = await createViteServer({
+    configFile: path.resolve(dirname, '../client/vite.config.ts'),
+    server: { middlewareMode: true, hmr: { server: httpServer } },
+    appType: 'custom',
+  });
+  app.use(vite.middlewares);
+  app.get('*path', async (req, res, next) => {
+    try {
+      const template = await readFile(path.resolve(dirname, '../client/index.html'), 'utf8');
+      const html = await vite.transformIndexHtml(req.originalUrl, template);
+      res.status(200).type('html').send(html);
+    } catch (error) {
+      vite.ssrFixStacktrace(error);
+      next(error);
+    }
+  });
+  app.use((err, _req, res, _next) => { console.error('API error:', err?.message || 'unknown'); if (err?.code === 11000) return res.status(409).json({ error: 'That record already exists.' }); res.status(500).json({ error: 'Something went wrong. Please try again.' }); });
+  httpServer.listen(port, () => console.info(`Fan Hub Plus is running at http://localhost:${port}`));
+} else {
+  if (existsSync(dist)) {
+    app.use(express.static(dist));
+    app.get('*path', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+  }
+  app.use((err, _req, res, _next) => { console.error('API error:', err?.message || 'unknown'); if (err?.code === 11000) return res.status(409).json({ error: 'That record already exists.' }); res.status(500).json({ error: 'Something went wrong. Please try again.' }); });
+  app.listen(port, () => console.info(`Fan Hub Plus is running at http://localhost:${port}`));
+}
