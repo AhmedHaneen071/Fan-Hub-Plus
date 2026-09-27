@@ -14,7 +14,7 @@ import { rateLimit } from 'express-rate-limit';
 import sanitizeHtml from 'sanitize-html';
 import nodemailer from 'nodemailer';
 import { z } from 'zod';
-import { connectDatabase, id } from './db.js';
+import { connectDatabase, disconnectDatabase, id } from './db.js';
 import { getCurrentUser, issueSession, requireAdmin, requireMember, requireUser, sessionCookie } from './auth.js';
 import { User, Category, Content, Character, Article, Merch, Event, Bookmark, Rating, Feedback, Submission, FAQ, ChatQuery, ResetToken } from './models.js';
 
@@ -201,7 +201,7 @@ if (process.env.NODE_ENV !== 'production') {
   const { createServer: createViteServer } = await import('vite');
   const vite = await createViteServer({
     configFile: path.resolve(dirname, '../client/vite.config.ts'),
-    server: { middlewareMode: { server: httpServer } },
+    server: { middlewareMode: true, ws: { server: httpServer } },
     appType: 'custom',
   });
   app.use(vite.middlewares);
@@ -216,6 +216,26 @@ if (process.env.NODE_ENV !== 'production') {
     }
   });
   app.use((err, _req, res, _next) => { console.error('API error:', err?.message || 'unknown'); if (err?.code === 11000) return res.status(409).json({ error: 'That record already exists.' }); res.status(500).json({ error: 'Something went wrong. Please try again.' }); });
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try { await vite.close(); } catch (error) { console.error('Vite shutdown error:', error?.message || 'unknown'); }
+    if (httpServer.listening) {
+      const closed = new Promise(resolve => httpServer.close(() => resolve()));
+      httpServer.closeAllConnections?.();
+      await closed;
+    }
+    await disconnectDatabase();
+  };
+  process.once('SIGTERM', () => { void shutdown(); });
+  process.once('SIGINT', () => { void shutdown(); });
+  httpServer.on('error', error => {
+    if (error.code === 'EADDRINUSE') console.error(`Port ${port} is already in use. Stop the other Fan Hub Plus dev server first.`);
+    else console.error('Development server error:', error.message);
+    process.exitCode = 1;
+    void shutdown();
+  });
   httpServer.listen(port, () => console.info(`Fan Hub Plus is running at http://localhost:${port}`));
 } else {
   if (existsSync(dist)) {

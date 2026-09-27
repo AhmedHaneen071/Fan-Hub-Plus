@@ -6,4 +6,8 @@ export async function connectDatabase() {
   console.info(`MongoDB connected: ${mongoose.connection.name}`);
 }
 
+export async function disconnectDatabase() {
+  await mongoose.disconnect();
+}
+
 export const id = (value) => mongoose.isValidObjectId(value);
