@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch server/index.js",
+    "dev": "node --watch-path=server server/index.js",
     "build": "tsc --noEmit -p client/tsconfig.json && vite build --config client/vite.config.ts",
     "start": "node server/start.js",
     "lint": "tsc --noEmit -p client/tsconfig.json",
