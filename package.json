@@ -8,7 +8,8 @@
     "build": "tsc --noEmit -p client/tsconfig.json && vite build --config client/vite.config.ts",
     "start": "node server/start.js",
     "lint": "tsc --noEmit -p client/tsconfig.json",
-    "data:migrate": "node scripts/migrate-sqlite-to-mongo.mjs"
+    "data:migrate": "node scripts/migrate-sqlite-to-mongo.mjs",
+    "data:seed-demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.1.1",

@@ -22,6 +22,19 @@ Use Node.js 20.19 or newer and npm. MongoDB Community Server must be running loc
 
 On first start, the app creates the eight fandom category records if they do not exist. It never drops or resets MongoDB data.
 
+### Load local demo data
+
+Run `npm run data:seed-demo` to add example content, characters, stories, showcase items, events, FAQs, and test activity to MongoDB. The command is repeatable: it inserts missing examples without replacing existing records. It only runs against the local `fanhubplus` database outside production.
+
+Development/Test Only accounts:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Admin | `admin@fanhubplus.test` | `FanHubDemo2026!` |
+| Registered fan | `fan@fanhubplus.test` | `FanHubDemo2026!` |
+
+These are local demo accounts, not production credentials. Do not reuse the demo password in any other environment.
+
 ### Bring forward existing local SQLite data
 
 The existing ignored `prisma/dev.db` remains untouched. If it contains the records you want to move, copy it into this project and set `DATABASE_URL` in `.env` to its SQLite path. Then run:
@@ -42,6 +55,7 @@ The script copies users, fandoms, content, characters, stories, merchandise, eve
 | `npm run start` | Serve the built client and API from Express |
 | `npm run lint` | Type-check the client |
 | `npm run data:migrate` | Copy an existing SQLite database to MongoDB without deleting the source |
+| `npm run data:seed-demo` | Add repeatable local demo data to the MongoDB collections |
 
 Build before starting in production: `npm run build`, then `npm run start`. Deploy the Express server and `client/dist` together. Use HTTPS, a persistent MongoDB service, secure secrets, a configured SMTP sender, and durable storage for `/public/uploads`.
 
