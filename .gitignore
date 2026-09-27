@@ -13,9 +13,14 @@
 # testing
 /coverage
 
-# next.js
+# legacy Next.js output (kept ignored for old local checkouts)
 /.next/
 /out/
+
+# Vite client output
+/client/dist/
+/client/.vite/
+/.vite/
 
 # production
 /build
