@@ -18,3 +18,65 @@
 .hero-image img{width:100%;height:100%;border-radius:0;object-fit:contain;mix-blend-mode:normal}
 .auth-art>img{mix-blend-mode:normal;border-radius:4px;background:#090e20}
 .map-frame{height:390px;overflow:hidden;border:1px solid var(--line);margin:10px 0 24px}.event-map{height:100%;width:100%;z-index:0}.leaflet-container{font:inherit}
+
+
+/* Mobile layout corrections: keep the editorial layout readable at phone widths. */
+.mobile-font-controls{display:none}
+@media(max-width:760px){
+  html,body,#root{max-width:100%;overflow-x:clip}
+  #main{min-width:0}
+  .topbar{height:68px}
+  .topbar-inner{width:calc(100% - 28px);gap:8px}
+  .brand{gap:6px;font-size:1rem}
+  .brand img,.footer-brand img{width:48px;height:30px;object-fit:contain}
+  .nav-actions{margin-left:auto;gap:4px;flex:none}
+  .nav-actions>.icon-button,.nav-actions>.account-chip,.nav-actions>.signin{min-width:44px;min-height:44px}
+  .nav-actions>.signin{padding-inline:12px}
+  .nav-actions .desktop-font-controls{display:none}
+  .menu-button{display:grid;width:44px;height:44px}
+  .nav{top:68px;z-index:35;max-height:calc(100dvh - 68px);overflow-y:auto;padding:8px 20px max(16px,env(safe-area-inset-bottom));}
+  .nav a{display:flex;align-items:center;min-height:48px;padding:10px 4px;font-size:1rem}
+  .mobile-font-controls{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:10px;margin-top:6px;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
+  .mobile-font-actions{display:flex;gap:8px}
+  .mobile-font-actions .icon-button{width:44px;height:44px;border:1px solid var(--line);border-radius:4px}
+  .hero{width:100%;min-width:0;grid-template-columns:minmax(0,1fr);padding:48px 22px 36px}
+  .hero-copy,.hero-art,.hero-image{width:100%;min-width:0;max-width:100%}
+  .hero h1{max-width:100%;font-size:clamp(2.15rem,10.8vw,3.35rem);line-height:1.02;overflow-wrap:normal;text-wrap:balance}
+  .hero-copy>p{max-width:100%;font-size:1rem;line-height:1.65}
+  .hero-actions{align-items:flex-start;flex-direction:column;gap:12px}
+  .hero-actions>.button,.hero-actions>.plain-link{max-width:100%;min-height:44px}
+  .hero-note{align-items:flex-start;gap:10px;font-size:.82rem}
+  .hero-art{height:auto;min-height:0;margin-top:24px;padding-bottom:26px}
+  .hero-image{height:auto;aspect-ratio:3/2}
+  .hero-image img{display:block;width:100%;height:100%;object-fit:contain}
+  .hero-stamp{width:78px;height:78px;right:3%;bottom:3%;font-size:.66rem}
+  .page-head h1{max-width:100%;font-size:clamp(2.25rem,9.7vw,3.5rem);line-height:1.06;text-wrap:balance}
+  .page-head p{max-width:38rem}
+  .detail-layout h1{font-size:clamp(2.25rem,9vw,3rem);overflow-wrap:anywhere}
+  .map-frame{height:300px}
+  .event-card{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:start}
+  .event-info{min-width:0}
+  .event-info h2{overflow-wrap:anywhere}
+  .event-card>.button{grid-column:2;justify-self:start;min-height:44px;font-size:.82rem}
+  .form-stack input,.form-stack select,.form-stack textarea,.profile-form input,.admin-form input,.admin-form select,.admin-form textarea,.chat-send input{min-height:44px;font-size:16px}
+  .admin-tabs{scroll-snap-type:x proximity;overscroll-behavior-x:contain;scrollbar-width:thin}
+  .admin-tabs button{min-height:48px;scroll-snap-align:start}
+  .admin-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:14px 2px}
+  .admin-row>div{min-width:0;overflow-wrap:anywhere}
+  .admin-row .text-button{min-width:44px;min-height:44px;padding:6px}
+  .row-actions{flex-wrap:wrap}
+  .row-actions>.button{min-height:44px}
+  .footer-links a{min-height:40px;display:inline-flex;align-items:center}
+  .toast{right:12px;bottom:max(12px,env(safe-area-inset-bottom));left:12px;max-width:none;justify-content:space-between}
+}
+@media(max-width:400px){
+  .topbar-inner{width:calc(100% - 24px)}
+  .brand img{width:42px;height:27px}
+  .hero{padding-inline:18px}
+  .hero h1{font-size:clamp(2.05rem,10.6vw,2.6rem)}
+  .hero-note{flex-wrap:wrap}
+  .page-wrap{padding-top:36px}
+  .category-tile{min-width:0}
+  .media-meta p{font-size:.78rem;line-height:1.45;min-height:0}
+  .pagination{gap:8px;flex-wrap:wrap}
+}
