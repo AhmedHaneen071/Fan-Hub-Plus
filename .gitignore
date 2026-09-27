@@ -63,3 +63,6 @@ prisma/*.db-wal
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# third-party agent skill packs (local tooling, not project code)
+/.agents/
