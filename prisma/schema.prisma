@@ -77,6 +77,11 @@ enum SubmissionStatus {
   REJECTED
 }
 
+enum SubmissionType {
+  CONTENT
+  FEATURED_ARTICLE
+}
+
 // ---------------------------------------------------------------------------
 // Users & authentication
 // ---------------------------------------------------------------------------
@@ -90,6 +95,7 @@ model User {
   avatar_url    String?
   favoriteCategories Category[] // joined via implicit many-to-many table
   created_at    DateTime  @default(now())
+  last_seen     DateTime?
 
   // Suspension is expressed as an expiry rather than a boolean so a temporary
   // ban lifts itself: the account is treated as suspended only while this
@@ -107,6 +113,7 @@ model User {
 
   @@index([email]) // email already unique; index used by auth lookup
   @@index([suspended_until]) // admin queue orders by soonest to expire
+  @@index([last_seen])
 }
 
 model PasswordResetToken {
@@ -165,6 +172,9 @@ model Content {
   description String
   release_date DateTime?
   popularity_score Int    @default(0) // shown as "heat" on cards
+  editorial_score  Int    @default(0)
+  rating_score     Int?
+  is_upcoming      Boolean @default(false)
   media_url   String?
   // YouTube media offer (Phase 4): a trailer/clip URL played in the in-page
   // multimedia player. NULL means there is no video offer and pages show the
@@ -178,6 +188,8 @@ model Content {
   @@index([type])
   @@index([genre])
   @@index([popularity_score])
+  @@index([editorial_score])
+  @@index([is_upcoming])
   // Created by the add_content_trailer_url migration but never declared here,
   // which left the schema and the database disagreeing and made `migrate dev`
   // try to drop a useful index. Declared so the two agree.
@@ -298,14 +310,17 @@ model FanSubmission {
   user_id    String
   title      String
   body       String
+  type       SubmissionType   @default(CONTENT)
   status     SubmissionStatus @default(PENDING)
   category   Category?        @relation(fields: [category_id], references: [id])
   category_id String?
   created_at DateTime         @default(now())
   reviewed_at DateTime?
+  reviewed_by String?
 
   @@index([user_id])
   @@index([status])
+  @@index([reviewed_by])
 }
 
 // ---------------------------------------------------------------------------
